@@ -30,6 +30,9 @@ module "eks" {
   node_instance_type = var.node_instance_type
   node_count         = var.node_count
   api_public_cidrs   = var.api_public_cidrs
+
+  # Destroyed before the leftover cleanup runs (cleanup.tf).
+  depends_on = [terraform_data.eks_leftovers]
 }
 
 module "rds" {
