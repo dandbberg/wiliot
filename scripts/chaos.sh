@@ -11,7 +11,7 @@
 #   drain      drain the node running broker-0 (and whatever else is there)
 #   outbox     revoke the producers' Kafka write ACL for 2 minutes
 #   replay     rewind the consumer group to offset 0 and reprocess everything
-#   keda       slow the consumers down, replay, watch KEDA scale 3 -> 12 -> 3
+#   keda       slow the consumers, replay the last 10 min, watch KEDA scale 3 -> 12 -> 3
 #   security   four connections to Kafka that must all be refused
 #
 # Exits 1 if any test lost or duplicated data. Needs kubectl on the cluster.
@@ -64,7 +64,10 @@ finish() {
   local rows distinct missing0 missing1
   rows=$(field "$after" rows); distinct=$(field "$after" distinct)
   missing0=$(field "$BEFORE" missing); missing1=$(field "$after" missing)
-  if [ "$rows" = "$distinct" ] && [ "$missing1" = "$missing0" ]; then
+  if [ -z "$rows" ] || [ -z "$missing0" ]; then
+    say "ERROR could not read the database, so this test is not judged"
+    FAILED=1
+  elif [ "$rows" = "$distinct" ] && [ "$missing1" = "$missing0" ]; then
     say "PASS  no duplicates, no new missing trades"
   else
     say "FAIL  duplicates=$(( rows - distinct )) new missing=$(( missing1 - missing0 ))"
@@ -140,7 +143,9 @@ t_keda() {
   kubectl -n trades wait --for=delete pod -l app.kubernetes.io/name=consumer --timeout=180s >/dev/null 2>&1
   # One insert and one offset commit per message, so the backlog lasts long enough to watch.
   run kubectl -n trades set env deploy/consumer BATCH_SIZE=1
-  group --topic trades --reset-offsets --to-earliest --execute >/dev/null
+  # The last 10 minutes only: the whole topic grows with every run, and live
+  # trades wait behind whatever is replayed.
+  group --topic trades --reset-offsets --by-duration PT10M --execute >/dev/null
   say "backlog: $(lag) messages"
   run kubectl -n trades annotate scaledobject consumer autoscaling.keda.sh/paused-replicas-
   local start; start=$(date +%s)

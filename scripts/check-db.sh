@@ -39,5 +39,12 @@ print(json.dumps({"spec": {"containers": [{
 EOF
 )
 
-kubectl -n monitoring run "check-db-$RANDOM" --rm -i --restart=Never --quiet --image=postgres:17 \
-  --overrides="$OVERRIDES" 2>&1 | grep -v -e '^pod ' -e "couldn't attach" -e '^$' | awk '!seen[$0]++' # attach can replay output
+# Run to completion, then read the logs: attaching (kubectl run -i) loses the
+# output when psql finishes before the attach connects.
+POD="check-db-$RANDOM"
+trap 'kubectl -n monitoring delete pod "$POD" --wait=false >/dev/null 2>&1' EXIT
+kubectl -n monitoring run "$POD" --restart=Never --image=postgres:17 --overrides="$OVERRIDES" >/dev/null
+kubectl -n monitoring wait "pod/$POD" --timeout=120s \
+  --for=jsonpath='{.status.phase}'=Succeeded >/dev/null 2>&1 || true
+kubectl -n monitoring logs "$POD" | grep -v '^$'
+[ "$(kubectl -n monitoring get pod "$POD" -o jsonpath='{.status.phase}')" = Succeeded ]
