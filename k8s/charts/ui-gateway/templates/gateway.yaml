@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ui-gateway
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      app: ui-gateway
+  template:
+    metadata:
+      labels:
+        app: ui-gateway
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/config.yaml") . | sha256sum }}
+    spec:
+      # One per node, so a drain never takes both.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app: ui-gateway
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nginx
+          image: {{ .Values.image }}
+          args: [nginx, -c, /etc/nginx/custom/nginx.conf, -g, "daemon off;"]
+          ports:
+            {{- range .Values.uis }}
+            - name: {{ .name | trunc 15 }}
+              containerPort: {{ .port }}
+            {{- end }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ (first .Values.uis).port }}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - {name: config, mountPath: /etc/nginx/custom, readOnly: true}
+            - {name: tls, mountPath: /tls, readOnly: true}
+            - {name: login, mountPath: /login, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: config
+          configMap:
+            name: ui-gateway
+        - name: tls
+          secret:
+            secretName: ui-gateway-tls
+        - name: login
+          secret:
+            secretName: ui-gateway-login
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ui-gateway
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: ui-gateway
+---
+# An internet-facing NLB created by EKS. Only allowedCidrs get through: the
+# source ranges become the node security group rules for these ports.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui-gateway
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+spec:
+  type: LoadBalancer
+  {{- if not .Values.allowedCidrs }}
+  {{- fail "allowedCidrs is empty: that would open the UIs to the internet" }}
+  {{- end }}
+  loadBalancerSourceRanges:
+    {{- toYaml .Values.allowedCidrs | nindent 4 }}
+  selector:
+    app: ui-gateway
+  ports:
+    {{- range .Values.uis }}
+    - name: {{ .name | trunc 15 }}
+      port: {{ .port }}
+      targetPort: {{ .port }}
+    {{- end }}

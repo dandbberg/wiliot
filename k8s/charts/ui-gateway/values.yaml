@@ -1,0 +1,28 @@
+image: nginxinc/nginx-unprivileged:1.27.5-alpine
+replicas: 2
+
+# Who may reach the load balancer at all (required, never empty).
+allowedCidrs: []
+
+# Secrets Manager secret with {username, password}: the login for every UI
+# except Grafana, which has its own (anonymous viewers, admin login).
+adminSecret: ""
+
+# Public port -> in-cluster service. "login: true" puts the gateway's login in front.
+uis:
+  - name: grafana
+    port: 3000
+    upstream: monitoring-grafana.monitoring.svc.cluster.local:80
+    login: false
+  - name: kafka-ui
+    port: 8080
+    upstream: kafka-ui.kafka.svc.cluster.local:8080
+    login: true
+  - name: prometheus
+    port: 9090
+    upstream: monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+    login: true
+  - name: alertmanager
+    port: 9093
+    upstream: monitoring-kube-prometheus-alertmanager.monitoring.svc.cluster.local:9093
+    login: true

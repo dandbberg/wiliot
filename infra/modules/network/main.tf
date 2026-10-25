@@ -20,7 +20,12 @@ resource "aws_subnet" "public" {
   vpc_id            = aws_vpc.this.id
   availability_zone = var.azs[count.index]
   cidr_block        = cidrsubnet(var.vpc_cidr, 8, count.index) # 10.40.0-2.0/24
-  tags              = { Name = "${var.name}-public-${var.azs[count.index]}", Tier = "public" }
+  tags = {
+    Name = "${var.name}-public-${var.azs[count.index]}", Tier = "public"
+    # Where EKS may put internet-facing load balancers (the UI gateway's NLB).
+    "kubernetes.io/role/elb"            = "1"
+    "kubernetes.io/cluster/${var.name}" = "shared"
+  }
 }
 
 resource "aws_subnet" "private" {

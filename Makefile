@@ -26,10 +26,14 @@ export KUBECONFIG := $(CURDIR)/eks.kubeconfig
 
 CHAOS := consumer producer broker drain outbox replay keda security
 
-.PHONY: up destroy infra images workloads kubeconfig ui health db chaos $(addprefix chaos-,$(CHAOS)) test validate init-infra init-k8s
+.PHONY: up destroy infra images workloads kubeconfig urls ui health db chaos $(addprefix chaos-,$(CHAOS)) test validate init-infra init-k8s
 
-## Full deploy: infrastructure, then images, then workloads.
+## Full deploy: infrastructure, then images, then workloads; ends with the UI
+## links and a first health check (not fatal: the pipeline may still be warming up).
 up: infra images workloads
+	@echo; $(MAKE) -s urls
+	@echo
+	-@./scripts/health.sh
 
 init-infra:
 	@$(INFRA) init -input=false -backend-config=../envs/$(ENV)/infra.backend.hcl >/dev/null
@@ -54,10 +58,18 @@ kubeconfig: init-infra
 ## Teardown in reverse order: workloads first so nothing in-cluster holds AWS resources.
 destroy: init-k8s init-infra
 	$(K8S) destroy -input=false $(K8S_VARS) -var image_tag=unused
-	./scripts/wait-volumes-gone.sh
+	CLUSTER=$$($(INFRA) output -raw cluster_name) ./scripts/wait-k8s-cleanup.sh
 	$(INFRA) destroy -input=false $(INFRA_VARS)
 
-## Grafana, Kafka UI, Prometheus and Alertmanager on localhost (Ctrl+C stops).
+## The web UIs' public URLs (allowed IPs only) and where their passwords are.
+urls: init-k8s init-infra
+	@$(K8S) output -json ui_urls | python3 -c 'import json,sys; [print(f"  {k:<13} {v}") for k,v in json.load(sys.stdin).items()]'
+	@echo
+	@echo "  Grafana: no login to view. Admin, and the login for the other three:"
+	@echo "    aws secretsmanager get-secret-value --secret-id $$($(INFRA) output -raw grafana_admin_secret_name) --query SecretString --output text"
+	@echo "    aws secretsmanager get-secret-value --secret-id $$($(INFRA) output -raw ui_admin_secret_name) --query SecretString --output text"
+
+## Fallback without the public gateway: the UIs on localhost via port-forward (Ctrl+C stops).
 ui: kubeconfig
 	@GRAFANA_ADMIN_SECRET=$$($(INFRA) output -raw grafana_admin_secret_name) ./scripts/ui.sh
 

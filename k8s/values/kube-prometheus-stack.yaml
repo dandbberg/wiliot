@@ -53,16 +53,21 @@ grafana:
   # 13.2 spun at ~1.7 cores on minikube and starved the pipeline; pinned to 12.x.
   image:
     tag: 12.3.1
-  deploymentStrategy:
-    type: Recreate # also required by the ReadWriteOnce volume below
-  # Dashboards, users and settings survive restarts. The PVC is a normal Helm
-  # resource, so uninstall (destroy) deletes it and its EBS volume.
+  # Stateless: dashboards and data sources come from ConfigMaps, passwords from
+  # Secrets Manager, viewers are anonymous. So no disk, and two replicas on
+  # different nodes: a drain or a crash leaves one serving.
+  replicas: 2
   persistence:
-    enabled: true
-    type: pvc
-    storageClassName: gp3
-    accessModes: [ReadWriteOnce]
-    size: 2Gi
+    enabled: false
+  podDisruptionBudget:
+    maxUnavailable: 1
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
   admin:
     existingSecret: grafana-admin-credentials # synced from Secrets Manager
     userKey: admin-user

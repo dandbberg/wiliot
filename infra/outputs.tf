@@ -60,6 +60,10 @@ output "grafana_db_secret_name" {
   value = aws_secretsmanager_secret.grafana_db.name
 }
 
+output "ui_admin_secret_name" {
+  value = aws_secretsmanager_secret.ui_admin.name
+}
+
 output "grafana_db_secret_arn" {
   value = aws_secretsmanager_secret.grafana_db.arn
 }

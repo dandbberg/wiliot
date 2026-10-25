@@ -19,7 +19,7 @@ resource "helm_release" "external_secrets" {
   values = [yamlencode({
     serviceAccount = {
       name = "external-secrets"
-      # IRSA: may read only the two grafana secrets (infra/secrets.tf).
+      # IRSA: may read only the UI secrets in infra/secrets.tf.
       annotations = { "eks.amazonaws.com/role-arn" = local.infra.irsa_role_arns["external-secrets"] }
     }
     resources = { requests = { cpu = "10m", memory = "64Mi" }, limits = { memory = "256Mi" } }
