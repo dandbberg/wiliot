@@ -1,0 +1,57 @@
+{{- if and .Values.consumer.autoscaling.enabled (.Capabilities.APIVersions.Has "keda.sh/v1alpha1") }}
+{{- $a := .Values.consumer.autoscaling }}
+# KEDA scales the consumer on the trades-consumer group's lag. It reads lag over
+# mTLS as principal "keda", whose ACLs only allow Describe on the topic and group.
+#
+# Bounds: never below one per node (availability); never above the
+# partition count (more consumers would sit idle). The cap also protects the
+# database: when lag comes from a slow Postgres, more consumers don't help.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: consumer
+  labels:
+    {{- include "pipeline.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: consumer
+  minReplicaCount: {{ $a.minReplicas }}
+  maxReplicaCount: {{ $a.maxReplicas }}
+  pollingInterval: 15
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          # Don't flap: wait until lag has stayed low for a while.
+          stabilizationWindowSeconds: {{ $a.scaleDownStabilizationSeconds }}
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: {{ .Values.kafka.bootstrap | quote }}
+        consumerGroup: {{ .Values.kafka.consumerGroup | quote }}
+        topic: {{ .Values.kafka.topic | quote }}
+        lagThreshold: {{ $a.lagThreshold | quote }} # target lag per consumer
+        allowIdleConsumers: "false"               # never more consumers than partitions
+      authenticationRef:
+        name: kafka-keda
+---
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: kafka-keda
+spec:
+  secretTargetRef:
+    - {parameter: tls, name: kafka-keda-tls-mode, key: tls}
+    - {parameter: ca, name: kafka-client-keda, key: ca.crt}
+    - {parameter: cert, name: kafka-client-keda, key: tls.crt}
+    - {parameter: key, name: kafka-client-keda, key: tls.key}
+---
+# KEDA reads every auth parameter from a Secret, including the plain "enable"
+# switch for TLS. Not sensitive.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kafka-keda-tls-mode
+stringData:
+  tls: enable
+{{- end }}

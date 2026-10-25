@@ -49,12 +49,28 @@ spec:
           labels: {severity: critical, pipeline: trades}
           annotations:
             summary: No producer is connected to Binance; trades are being lost (no replay)
+        # Redundancy = at least 2 live connections. With 3 producers, one being
+        # restarted or rescheduled is routine and must not alert.
         - alert: TradesProducerRedundancyLost
-          expr: sum(trades_ws_connected) < {{ .Values.producer.replicas }}
+          expr: sum(trades_ws_connected) < 2
           for: 2m
           labels: {severity: warning, pipeline: trades}
           annotations:
-            summary: "Only {{`{{ $value }}`}} of {{ .Values.producer.replicas }} producers connected; a reconnect now would lose trades"
+            summary: "Only {{`{{ $value }}`}} producer connected; a reconnect now would lose trades"
+        # Kafka is refusing trades and the producers are holding them. Nothing is
+        # lost yet, but it will be if this lasts long enough to fill the queue.
+        - alert: TradesKafkaRetrying
+          expr: sum(trades_kafka_retry_pending) > 0
+          for: 2m
+          labels: {severity: warning, pipeline: trades}
+          annotations:
+            summary: "{{`{{ $value }}`}} trades held by producers, Kafka not accepting them"
+        # The retry queue overflowed: trades were actually lost.
+        - alert: TradesDropped
+          expr: increase(trades_kafka_dropped_total[10m]) > 0
+          labels: {severity: critical, pipeline: trades}
+          annotations:
+            summary: Producers dropped trades (retry queue full)
         - alert: TradesConsumerLagHigh
           expr: sum(trades_kafka_consumer_lag) > {{ .Values.monitoring.consumerLagThreshold }}
           for: 5m

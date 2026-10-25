@@ -6,7 +6,9 @@ metadata:
     {{- include "pipeline.labels" . | nindent 4 }}
     app.kubernetes.io/name: consumer
 spec:
+  {{- if not .Values.consumer.autoscaling.enabled }}
   replicas: {{ .Values.consumer.replicas }}
+  {{- end }}{{/* with autoscaling, KEDA owns the replica count */}}
   selector:
     matchLabels:
       app.kubernetes.io/name: consumer

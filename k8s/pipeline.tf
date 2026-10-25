@@ -18,9 +18,9 @@ resource "helm_release" "pipeline" {
     kafka = {
       bootstrap = "kafka.kafka.svc.cluster.local:9092"
       auth      = "mtls" # TLS + client certificate; ACLs per component (charts/kafka)
-      # Single broker: one replica per partition.
-      replication       = 1
-      minInsyncReplicas = 1
+      # 3 brokers: every partition on all 3, writes need 2 in sync.
+      replication       = 3
+      minInsyncReplicas = 2
     }
 
     db = {
@@ -41,6 +41,10 @@ resource "helm_release" "pipeline" {
       topicAdmin = "default"
     }
 
+    consumer = {
+      autoscaling = { enabled = true } # KEDA, 2-12 replicas on lag
+    }
+
     monitoring = {
       enabled   = true
       dashboard = "trades-pipeline.json" # same as minikube, SQL panels included
@@ -48,5 +52,5 @@ resource "helm_release" "pipeline" {
   })]
 
   # topic-init needs Kafka up; the PodMonitor/rules need the monitoring CRDs.
-  depends_on = [helm_release.kafka, helm_release.monitoring]
+  depends_on = [helm_release.kafka, helm_release.monitoring, helm_release.keda]
 }
