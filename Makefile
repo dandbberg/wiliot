@@ -11,7 +11,7 @@ endif
 # kubectl for the EKS cluster, kept out of ~/.kube/config (git-ignored).
 EKS_KUBECONFIG := $(CURDIR)/eks.kubeconfig
 
-.PHONY: up down infra images workloads kubeconfig health fmt validate test
+.PHONY: up down infra images workloads kubeconfig ui health fmt validate test
 
 ## Full deploy: infrastructure, then images, then workloads.
 up: infra images workloads
@@ -39,6 +39,10 @@ down:
 	./scripts/wait-volumes-gone.sh
 	terraform -chdir=infra init -input=false
 	terraform -chdir=infra destroy -input=false
+
+## Grafana, Kafka UI, Prometheus and Alertmanager on localhost (Ctrl+C stops).
+ui:
+	@./scripts/ui.sh
 
 ## One-command health check: HEALTHY / UNHEALTHY / UNKNOWN (exit 0 / 1 / 2).
 health:
