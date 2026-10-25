@@ -24,6 +24,10 @@ def base_config() -> dict:
     conf = {
         "bootstrap.servers": config.env("KAFKA_BOOTSTRAP"),
         "client.id": socket.gethostname(),
+        # A broker that disappears without closing its connections (node loss,
+        # force-killed pod) would otherwise hold in-flight requests for the
+        # default 60 s before the client gives up and asks the new leader.
+        "socket.timeout.ms": 10_000,
     }
     auth = config.env("KAFKA_AUTH", "none")
     if auth == "mtls":
