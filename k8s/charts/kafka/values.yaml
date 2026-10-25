@@ -1,0 +1,14 @@
+image: apache/kafka:4.1.0
+
+# KRaft needs a fixed cluster id: 22 chars of URL-safe base64.
+clusterId: dan-berg-eks-kafka-001
+
+storage:
+  className: gp3
+  size: 20Gi
+
+heap: -Xms1g -Xmx1g
+
+resources:
+  requests: {cpu: 250m, memory: 1536Mi}
+  limits: {memory: 2Gi}

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: kafka
+description: Single-broker KRaft Kafka on a persistent volume (lab sizing)
+type: application
+version: 0.1.0
+appVersion: "4.1.0"

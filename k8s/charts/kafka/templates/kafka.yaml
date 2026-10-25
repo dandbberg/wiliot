@@ -1,0 +1,96 @@
+# One broker, also its own KRaft controller. Lab sizing: a restart pauses
+# ingestion briefly (producers buffer, consumers resume from committed offsets).
+# Production: 3 brokers across AZs with RF 3 / min.insync.replicas 2, or MSK.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+spec:
+  selector:
+    app: kafka
+  ports:
+    - name: client
+      port: 9092
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+spec:
+  serviceName: kafka
+  replicas: 1
+  # Deleting Kafka (helm uninstall / terraform destroy) deletes its volume too,
+  # so nothing is left behind in the account.
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Delete
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      # A Service named "kafka" makes Kubernetes inject KAFKA_PORT=tcp://...,
+      # which the image would read as broker config. Turn service links off.
+      enableServiceLinks: false
+      securityContext:
+        fsGroup: 1000 # the image runs as appuser (1000); lets it write the EBS volume
+      terminationGracePeriodSeconds: 60 # time for a clean shutdown and log flush
+      containers:
+        - name: kafka
+          image: {{ .Values.image }}
+          ports:
+            - containerPort: 9092
+          env:
+            - name: CLUSTER_ID
+              value: {{ .Values.clusterId | quote }}
+            - name: KAFKA_NODE_ID
+              value: "1"
+            - name: KAFKA_PROCESS_ROLES
+              value: broker,controller
+            - name: KAFKA_LISTENERS
+              value: PLAINTEXT://:9092,CONTROLLER://:9093
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: PLAINTEXT://kafka.{{ .Release.Namespace }}.svc.cluster.local:9092
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: CONTROLLER
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: 1@localhost:9093
+            # Single broker: internal topics can't have more than one replica.
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+              value: "false" # the pipeline's topic-init Job creates "trades" explicitly
+            # A subdirectory: a fresh ext4 volume has lost+found at its root,
+            # which Kafka would take for a malformed partition directory.
+            - name: KAFKA_LOG_DIRS
+              value: /var/lib/kafka/data/logs
+            - name: KAFKA_HEAP_OPTS
+              value: {{ .Values.heap | quote }}
+          readinessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/kafka/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: {{ .Values.storage.className }}
+        resources:
+          requests:
+            storage: {{ .Values.storage.size }}
