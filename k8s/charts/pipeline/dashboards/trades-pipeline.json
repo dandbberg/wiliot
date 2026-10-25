@@ -38,7 +38,7 @@
       "gridPos": {
         "x": 0,
         "y": 1,
-        "w": 6,
+        "w": 5,
         "h": 4
       },
       "targets": [
@@ -97,9 +97,9 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 6,
+        "x": 5,
         "y": 1,
-        "w": 6,
+        "w": 5,
         "h": 4
       },
       "targets": [
@@ -148,15 +148,15 @@
       "type": "stat",
       "title": "Producers connected",
       "id": 4,
-      "description": "2 = redundant. 1 = a reconnect now would lose trades. 0 = losing trades.",
+      "description": "3 = all connected. 2 = still redundant. 1 = a reconnect now would lose trades. 0 = losing trades.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 12,
+        "x": 10,
         "y": 1,
-        "w": 6,
+        "w": 5,
         "h": 4
       },
       "targets": [
@@ -195,8 +195,72 @@
                 "value": 1
               },
               {
-                "color": "green",
+                "color": "yellow",
                 "value": 2
+              },
+              {
+                "color": "green",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Consumers running",
+      "id": 5,
+      "description": "KEDA scales the consumers between 3 and 12 on Kafka lag. Above 3 = working off a backlog.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 15,
+        "y": 1,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(kube_deployment_status_replicas_available{namespace=\"trades\",deployment=\"consumer\"}) or vector(0)",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "green",
+                "value": 3
               }
             ]
           }
@@ -207,16 +271,16 @@
     {
       "type": "stat",
       "title": "Pipeline alerts firing",
-      "id": 5,
+      "id": 6,
       "description": "Alerts from the trades-pipeline PrometheusRule.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 18,
+        "x": 20,
         "y": 1,
-        "w": 6,
+        "w": 4,
         "h": 4
       },
       "targets": [
@@ -263,7 +327,7 @@
     {
       "type": "timeseries",
       "title": "Ingest latency",
-      "id": 6,
+      "id": 7,
       "description": "Binance trade time to committed row. Red band = above the 2s SLO.",
       "datasource": {
         "type": "prometheus",
@@ -349,7 +413,7 @@
     {
       "type": "table",
       "title": "Firing / pending alerts",
-      "id": 7,
+      "id": 8,
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -405,7 +469,7 @@
     {
       "type": "row",
       "title": "Producer \u2014 Binance WebSocket \u2192 Kafka",
-      "id": 8,
+      "id": 9,
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -418,7 +482,7 @@
     {
       "type": "timeseries",
       "title": "Trades received / s by symbol (Binance)",
-      "id": 9,
+      "id": 10,
       "description": "Max across producers: each replica receives every trade.",
       "datasource": {
         "type": "prometheus",
@@ -473,7 +537,7 @@
     {
       "type": "timeseries",
       "title": "WebSocket connected by producer",
-      "id": 10,
+      "id": 11,
       "description": "1 = connected.",
       "datasource": {
         "type": "prometheus",
@@ -525,7 +589,7 @@
     {
       "type": "timeseries",
       "title": "Reconnects & Kafka delivery failures",
-      "id": 11,
+      "id": 12,
       "description": "Per 5 minutes.",
       "datasource": {
         "type": "prometheus",
@@ -586,7 +650,7 @@
     {
       "type": "row",
       "title": "Kafka \u2014 topic trades, group trades-consumer",
-      "id": 12,
+      "id": 13,
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -599,7 +663,7 @@
     {
       "type": "timeseries",
       "title": "Consumer lag by partition",
-      "id": 13,
+      "id": 14,
       "description": "Messages not yet consumed. From librdkafka statistics in the consumer.",
       "datasource": {
         "type": "prometheus",
@@ -654,7 +718,7 @@
     {
       "type": "timeseries",
       "title": "Messages produced / s by partition",
-      "id": 14,
+      "id": 15,
       "description": "Even bands = the symbol:trade_id key spreads load across partitions.",
       "datasource": {
         "type": "prometheus",
@@ -709,8 +773,8 @@
     {
       "type": "timeseries",
       "title": "Consumed vs stored",
-      "id": 15,
-      "description": "consumed \u2248 2 \u00d7 stored: both producers deliver every trade, the primary key keeps one.",
+      "id": 16,
+      "description": "consumed \u2248 3 \u00d7 stored: each of the 3 producers delivers every trade, the primary key keeps one.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -786,13 +850,152 @@
       }
     },
     {
-      "type": "row",
-      "title": "PostgreSQL",
-      "id": 16,
-      "collapsed": false,
+      "type": "timeseries",
+      "title": "Pods: ready vs desired",
+      "id": 17,
+      "description": "KEDA sets 'desired' from the consumer lag above; 'ready' follows once the new pods start. It scales down again 120 s after the lag is gone.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "gridPos": {
         "x": 0,
         "y": 31,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "kube_deployment_status_replicas_available{namespace=\"trades\",deployment=\"consumer\"}",
+          "legendFormat": "consumers ready",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"keda-hpa-consumer\"}",
+          "legendFormat": "consumers desired (KEDA)",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "kube_deployment_status_replicas_available{namespace=\"trades\",deployment=\"producer\"}",
+          "legendFormat": "producers ready",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "kube_horizontalpodautoscaler_spec_min_replicas{horizontalpodautoscaler=\"keda-hpa-consumer\"}",
+          "legendFormat": "min",
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "kube_horizontalpodautoscaler_spec_max_replicas{horizontalpodautoscaler=\"keda-hpa-consumer\"}",
+          "legendFormat": "max",
+          "refId": "E"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "min"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "max"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "row",
+      "title": "PostgreSQL",
+      "id": 18,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 38,
         "w": 24,
         "h": 1
       },
@@ -801,7 +1004,7 @@
     {
       "type": "table",
       "title": "Latest trades",
-      "id": 17,
+      "id": 19,
       "description": "The trades table (assignment step 2), newest first, values exactly as stored. notional = price x quantity, computed by Postgres (generated column).",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -809,7 +1012,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 32,
+        "y": 39,
         "w": 24,
         "h": 10
       },
@@ -886,7 +1089,7 @@
     {
       "type": "timeseries",
       "title": "Insert transaction duration",
-      "id": 18,
+      "id": 20,
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -894,7 +1097,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 42,
+        "y": 49,
         "w": 8,
         "h": 8
       },
@@ -947,7 +1150,7 @@
     {
       "type": "timeseries",
       "title": "Database activity",
-      "id": 19,
+      "id": 21,
       "description": "From postgres_exporter.",
       "datasource": {
         "type": "prometheus",
@@ -955,7 +1158,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 42,
+        "y": 49,
         "w": 8,
         "h": 8
       },
@@ -1017,7 +1220,7 @@
     {
       "type": "timeseries",
       "title": "Insert retries (DB unavailable)",
-      "id": 20,
+      "id": 22,
       "description": "Non-zero = consumers are blocked retrying; lag grows, nothing is skipped.",
       "datasource": {
         "type": "prometheus",
@@ -1025,7 +1228,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 42,
+        "y": 49,
         "w": 8,
         "h": 8
       },
@@ -1069,7 +1272,7 @@
     {
       "type": "table",
       "title": "Per symbol (from Postgres)",
-      "id": 21,
+      "id": 23,
       "description": "Straight from the table: what a user of the data sees. Quiet symbols can legitimately be seconds old.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -1077,7 +1280,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 50,
+        "y": 57,
         "w": 12,
         "h": 8
       },
@@ -1105,7 +1308,7 @@
     {
       "type": "table",
       "title": "Gaps in trade ids, last 24h (missing trades)",
-      "id": 22,
+      "id": 24,
       "description": "Binance trade ids are sequential per symbol, so a hole is a trade we never stored. Trades newer than 30s are excluded: across 12 partitions ids briefly land out of order. Empty = complete.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -1113,7 +1316,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 50,
+        "y": 57,
         "w": 12,
         "h": 8
       },
@@ -1141,11 +1344,11 @@
     {
       "type": "row",
       "title": "Kubernetes \u2014 namespace trades",
-      "id": 23,
+      "id": 25,
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 58,
+        "y": 65,
         "w": 24,
         "h": 1
       },
@@ -1154,7 +1357,7 @@
     {
       "type": "timeseries",
       "title": "Container restarts (1h)",
-      "id": 24,
+      "id": 26,
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -1162,7 +1365,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 59,
+        "y": 66,
         "w": 8,
         "h": 8
       },
@@ -1206,7 +1409,7 @@
     {
       "type": "timeseries",
       "title": "CPU",
-      "id": 25,
+      "id": 27,
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -1214,7 +1417,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 59,
+        "y": 66,
         "w": 8,
         "h": 8
       },
@@ -1258,7 +1461,7 @@
     {
       "type": "timeseries",
       "title": "Memory (working set)",
-      "id": 26,
+      "id": 28,
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -1266,7 +1469,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 59,
+        "y": 66,
         "w": 8,
         "h": 8
       },

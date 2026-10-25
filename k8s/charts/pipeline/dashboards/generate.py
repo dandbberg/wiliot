@@ -64,7 +64,7 @@ def stat(title, expr, x, w, unit="none", steps=((None, "green"),), desc="", deci
     panels.append(p)
 
 
-def ts(title, exprs, x, w, h=8, unit="none", desc="", threshold=None, stack=False):
+def ts(title, exprs, x, w, h=8, unit="none", desc="", threshold=None, stack=False, overrides=()):
     defaults = {"unit": unit, "custom": {"fillOpacity": 10, "lineWidth": 1, "showPoints": "never"}}
     if stack:
         defaults["custom"]["stacking"] = {"mode": "normal"}
@@ -76,7 +76,7 @@ def ts(title, exprs, x, w, h=8, unit="none", desc="", threshold=None, stack=Fals
                    "gridPos": {"x": x, "y": y[0], "w": w, "h": h}, "targets": targets(*exprs),
                    "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"]},
                                "tooltip": {"mode": "multi", "sort": "desc"}},
-                   "fieldConfig": {"defaults": defaults, "overrides": []}})
+                   "fieldConfig": {"defaults": defaults, "overrides": list(overrides)}})
 
 
 def sql_table(title, sql, x, w, h=8, desc="", overrides=()):
@@ -89,12 +89,16 @@ def sql_table(title, sql, x, w, h=8, desc="", overrides=()):
 
 # ---------------------------------------------------------------- SLO
 row("Freshness SLO — p99 trade time → stored in Postgres < 2s")
-stat("p99 ingest latency (5m)", "trades:ingest_latency_seconds:p99_5m", 0, 6, "s",
+stat("p99 ingest latency (5m)", "trades:ingest_latency_seconds:p99_5m", 0, 5, "s",
      ((None, "green"), (1, "orange"), (2, "red")), "The SLO metric. Red means the 2s target is breached.", 2)
-stat("Trades stored / s", "sum(rate(trades_inserted_total[1m]))", 6, 6, "reqps", ((None, "red"), (0.001, "green")), decimals=1)
-stat("Producers connected", "sum(trades_ws_connected) or vector(0)", 12, 6, "none",
-     ((None, "red"), (1, "orange"), (2, "green")), "2 = redundant. 1 = a reconnect now would lose trades. 0 = losing trades.")
-stat("Pipeline alerts firing", 'count(ALERTS{pipeline="trades",alertstate="firing"}) or vector(0)', 18, 6, "none",
+stat("Trades stored / s", "sum(rate(trades_inserted_total[1m]))", 5, 5, "reqps", ((None, "red"), (0.001, "green")), decimals=1)
+stat("Producers connected", "sum(trades_ws_connected) or vector(0)", 10, 5, "none",
+     ((None, "red"), (1, "orange"), (2, "yellow"), (3, "green")),
+     "3 = all connected. 2 = still redundant. 1 = a reconnect now would lose trades. 0 = losing trades.")
+stat("Consumers running", 'sum(kube_deployment_status_replicas_available{namespace="trades",deployment="consumer"}) or vector(0)',
+     15, 5, "none", ((None, "red"), (1, "orange"), (3, "green")),
+     "KEDA scales the consumers between 3 and 12 on Kafka lag. Above 3 = working off a backlog.")
+stat("Pipeline alerts firing", 'count(ALERTS{pipeline="trades",alertstate="firing"}) or vector(0)', 20, 4, "none",
      ((None, "green"), (1, "red")), "Alerts from the trades-pipeline PrometheusRule.")
 y[0] += 4
 ts("Ingest latency", [
@@ -134,8 +138,21 @@ ts("Consumed vs stored", [
     ("sum(rate(trades_inserted_total[1m]))", "stored (new)"),
     ("sum(rate(trades_duplicates_total[1m]))", "duplicates dropped"),
     ("sum(rate(trades_malformed_total[1m]))", "malformed"),
-], 16, 8, unit="reqps", desc="consumed ≈ 2 × stored: both producers deliver every trade, the primary key keeps one.")
+], 16, 8, unit="reqps", desc="consumed ≈ 3 × stored: each of the 3 producers delivers every trade, the primary key keeps one.")
 y[0] += 8
+HPA = 'horizontalpodautoscaler="keda-hpa-consumer"'
+dashed = {"id": "custom.lineStyle", "value": {"fill": "dash", "dash": [10, 10]}}
+ts("Pods: ready vs desired", [
+    ('kube_deployment_status_replicas_available{namespace="trades",deployment="consumer"}', "consumers ready"),
+    (f'kube_horizontalpodautoscaler_status_desired_replicas{{{HPA}}}', "consumers desired (KEDA)"),
+    ('kube_deployment_status_replicas_available{namespace="trades",deployment="producer"}', "producers ready"),
+    (f'kube_horizontalpodautoscaler_spec_min_replicas{{{HPA}}}', "min"),
+    (f'kube_horizontalpodautoscaler_spec_max_replicas{{{HPA}}}', "max"),
+], 0, 24, h=7, desc="KEDA sets 'desired' from the consumer lag above; 'ready' follows once the new pods start. "
+                    "It scales down again 120 s after the lag is gone.",
+   overrides=[{"matcher": {"id": "byName", "options": n}, "properties": [dashed, {"id": "color", "value": {"mode": "fixed", "fixedColor": "gray"}}]}
+              for n in ("min", "max")])
+y[0] += 7
 
 # ---------------------------------------------------------------- Postgres
 row("PostgreSQL")
