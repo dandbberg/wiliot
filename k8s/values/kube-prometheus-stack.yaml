@@ -1,0 +1,69 @@
+# kube-prometheus-stack on EKS. Same choices as local/monitoring/, minus:
+#   - ingresses (no load balancer to clean up; reach UIs with kubectl port-forward)
+#   - the Grafana Postgres data source (the database accepts IAM logins only)
+
+# Managed control plane: these components' metrics aren't scrapeable on EKS.
+kubeEtcd: {enabled: false}
+kubeControllerManager: {enabled: false}
+kubeScheduler: {enabled: false}
+kubeProxy: {enabled: false}
+defaultRules:
+  rules:
+    etcd: false
+    kubeControllerManager: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    kubeProxy: false
+
+prometheus:
+  prometheusSpec:
+    # Pick up the pipeline chart's PodMonitor and PrometheusRule.
+    podMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    retention: 2d
+    # emptyDir: metrics are lost if Prometheus restarts, but no EBS volume is
+    # created that could outlive a destroy.
+    resources:
+      requests: {cpu: 200m, memory: 512Mi}
+      limits: {memory: 1536Mi}
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests: {cpu: 10m, memory: 64Mi}
+
+grafana:
+  # 13.2 spun at ~1.7 cores on minikube and starved the pipeline; pinned to 12.x.
+  image:
+    tag: 12.3.1
+  deploymentStrategy:
+    type: Recreate
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  grafana.ini:
+    auth.anonymous:
+      enabled: true
+      org_role: Viewer
+    plugins:
+      preinstall_disabled: true
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false
+      check_for_plugin_updates: false
+    news:
+      news_feed_enabled: false
+    dashboards:
+      default_home_dashboard_path: /tmp/dashboards/trades-pipeline.json
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      searchNamespace: ALL
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: "1", memory: 768Mi}
