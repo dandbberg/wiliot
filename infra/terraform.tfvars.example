@@ -1,0 +1,3 @@
+# Defaults already match the sandbox; copy to terraform.tfvars only to override.
+# region      = "ca-central-1"
+# name_prefix = "dan-berg"

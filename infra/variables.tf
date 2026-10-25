@@ -1,0 +1,62 @@
+variable "region" {
+  description = "The only region the sandbox allows."
+  type        = string
+  default     = "ca-central-1"
+}
+
+variable "account_id" {
+  description = "Sandbox account; the provider refuses to run against any other."
+  type        = string
+  default     = "092988563851"
+}
+
+variable "name_prefix" {
+  description = "Account-enforced prefix for IAM roles, policies and S3 buckets."
+  type        = string
+  default     = "dan-berg"
+}
+
+variable "permissions_boundary_arn" {
+  description = "Boundary the account requires on every IAM role."
+  type        = string
+  default     = "arn:aws:iam::092988563851:policy/CandidateBoundary"
+}
+
+variable "vpc_cidr" {
+  type    = string
+  default = "10.40.0.0/16"
+}
+
+variable "kubernetes_version" {
+  description = "Within standard support in ca-central-1 (1.34-1.37 as of 2026-10)."
+  type        = string
+  default     = "1.36"
+}
+
+variable "node_instance_type" {
+  description = "Graviton: images are built natively on the arm64 dev machine."
+  type        = string
+  default     = "t4g.large"
+}
+
+variable "node_count" {
+  description = "Lab sizing: two nodes so pods (Kafka included) can be rescheduled; production would run 3+ across 3 AZs."
+  type        = number
+  default     = 2
+}
+
+variable "db_instance_class" {
+  type    = string
+  default = "db.t4g.small"
+}
+
+variable "postgres_version" {
+  type    = string
+  default = "17.5"
+}
+
+variable "api_public_cidrs" {
+  description = "Who may reach the EKS API endpoint from the internet. Narrow to your IP for real use."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
