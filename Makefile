@@ -42,7 +42,7 @@ down:
 
 ## One-command health check: HEALTHY / UNHEALTHY / UNKNOWN (exit 0 / 1 / 2).
 health:
-	@KUBECONFIG=$(EKS_KUBECONFIG) kubectl -n trades exec deploy/consumer -- python -m trades.healthcheck
+	@KUBECONFIG=$(EKS_KUBECONFIG) ./scripts/health.sh
 
 fmt:
 	terraform fmt -recursive
