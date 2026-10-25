@@ -10,6 +10,15 @@ variable "account_id" {
   default     = "092988563851"
 }
 
+variable "environment" {
+  description = "Which environment this state describes. Resources are named <name_prefix>-<environment>."
+  type        = string
+  validation {
+    condition     = contains(["staging", "perf", "prod"], var.environment)
+    error_message = "environment must be staging, perf or prod."
+  }
+}
+
 variable "name_prefix" {
   description = "Account-enforced prefix for IAM roles, policies and S3 buckets."
   type        = string

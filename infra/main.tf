@@ -3,7 +3,7 @@ data "aws_availability_zones" "available" {
 }
 
 locals {
-  name = var.name_prefix
+  name = "${var.name_prefix}-${var.environment}" # e.g. dan-berg-staging; still matches the account's dan-berg-* rule
   # ca-central-1 has 1a, 1b and 1d (no 1c), so never hard-code zone names.
   azs = slice(data.aws_availability_zones.available.names, 0, 3)
 }

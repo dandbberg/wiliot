@@ -2,9 +2,9 @@
 # Open the cluster's web UIs on localhost. Nothing is exposed publicly (no load
 # balancer, no DNS), so this port-forwards each one through the Kubernetes API.
 #
-#   AWS_PROFILE=<profile> scripts/ui.sh [--open]
+#   make ui ENV=<env>          (or: CLUSTER=<name> scripts/ui.sh [--open])
 #
-# - writes its own kubeconfig (eks.kubeconfig) instead of touching ~/.kube/config
+# - uses eks.kubeconfig (written by make kubeconfig), never ~/.kube/config
 # - picks the next free port if one is taken
 # - reconnects a forward that drops (e.g. its pod restarted)
 # - Ctrl+C stops everything; nothing keeps running afterwards
@@ -12,9 +12,10 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CLUSTER="${CLUSTER:-dan-berg}"
+CLUSTER="${CLUSTER:-dan-berg-staging}"
+GRAFANA_ADMIN_SECRET="${GRAFANA_ADMIN_SECRET:-$CLUSTER/grafana-admin}"
 export AWS_REGION="${AWS_REGION:-ca-central-1}"
-export KUBECONFIG="${KUBECONFIG_FILE:-$ROOT/eks.kubeconfig}"
+export KUBECONFIG="${KUBECONFIG:-$ROOT/eks.kubeconfig}"
 OPEN=false; [ "${1:-}" = "--open" ] && OPEN=true
 
 # name | namespace | service | preferred local port | service port | path to open
@@ -100,7 +101,7 @@ done
 cat <<EOF
 
   Grafana: no login needed to view. Admin password, if you want to edit:
-    aws secretsmanager get-secret-value --secret-id dan-berg/grafana-admin --query SecretString --output text
+    aws secretsmanager get-secret-value --secret-id $GRAFANA_ADMIN_SECRET --query SecretString --output text
 
   Kafka UI is read-only. Ctrl+C stops everything.
 EOF

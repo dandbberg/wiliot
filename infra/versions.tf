@@ -1,10 +1,10 @@
 terraform {
   required_version = ">= 1.11" # ephemeral resources, write-only arguments
 
-  # State bucket and lock table are pre-provisioned by the sandbox (see environment PDF).
+  # State bucket and lock table are pre-provisioned by the sandbox. The key is
+  # per environment: envs/<env>/infra.backend.hcl (terraform init -backend-config).
   backend "s3" {
     bucket         = "dan-berg-tfstate-092988563851"
-    key            = "infra/terraform.tfstate"
     region         = "ca-central-1"
     dynamodb_table = "dan-berg-tflock"
     encrypt        = true
@@ -30,9 +30,10 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project   = var.name_prefix
-      ManagedBy = "terraform"
-      Stack     = "infra"
+      Project     = var.name_prefix
+      Environment = var.environment
+      ManagedBy   = "terraform"
+      Stack       = "infra"
       # The sandbox's IAM policy recognises our objects by this tag (as well as
       # by the dan-berg-* name), so every role and policy carries it.
       candidate = var.name_prefix

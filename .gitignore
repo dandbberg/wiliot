@@ -19,6 +19,7 @@ secrets/
 
 # --- Terraform ---
 .terraform/
+.terraform-*/
 *.tfstate
 *.tfstate.*
 *.tfplan
@@ -31,10 +32,11 @@ override.tf.json
 *_override.tf.json
 .terraformrc
 terraform.rc
-# tfvars may carry environment-specific values; only the example is committed
+# tfvars may carry secrets; only the example and envs/ (no secrets there) are committed
 *.tfvars
 *.tfvars.json
 !*.tfvars.example
+!envs/*/*.tfvars
 # NOTE: .terraform.lock.hcl is intentionally committed (pins provider checksums)
 
 # --- Helm ---

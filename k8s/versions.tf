@@ -3,9 +3,9 @@ terraform {
 
   # Separate state from infra/ so the cluster exists before the kubernetes/helm
   # providers are configured, and so destroy can remove workloads first.
+  # Key per environment: envs/<env>/k8s.backend.hcl.
   backend "s3" {
     bucket         = "dan-berg-tfstate-092988563851"
-    key            = "k8s/terraform.tfstate"
     region         = "ca-central-1"
     dynamodb_table = "dan-berg-tflock"
     encrypt        = true
@@ -27,7 +27,7 @@ data "terraform_remote_state" "infra" {
   backend = "s3"
   config = {
     bucket = "dan-berg-tfstate-092988563851"
-    key    = "infra/terraform.tfstate"
+    key    = var.infra_state_key
     region = "ca-central-1"
   }
 }

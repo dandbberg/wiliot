@@ -7,6 +7,10 @@ output "name_prefix" {
   value = var.name_prefix
 }
 
+output "environment" {
+  value = var.environment
+}
+
 output "cluster_name" {
   value = module.eks.cluster_name
 }
