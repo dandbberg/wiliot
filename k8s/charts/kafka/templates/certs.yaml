@@ -1,0 +1,50 @@
+# Broker certificate: server auth for clients, and client auth for the broker's
+# own connections (inter-broker and controller listeners). "localhost" is there
+# because the controller listener is bound to localhost.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: kafka-broker
+spec:
+  secretName: kafka-broker-tls
+  commonName: kafka-broker
+  dnsNames:
+    - kafka
+    - kafka.{{ .Release.Namespace }}
+    - kafka.{{ .Release.Namespace }}.svc
+    - kafka.{{ .Release.Namespace }}.svc.cluster.local
+    - localhost
+  usages: [server auth, client auth]
+  duration: {{ .Values.tls.duration }}
+  renewBefore: {{ .Values.tls.renewBefore }}
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    encoding: PKCS8 # Kafka's PEM keystore requires PKCS#8
+    rotationPolicy: Always
+  issuerRef:
+    kind: ClusterIssuer
+    name: {{ .Values.tls.issuer }}
+{{- range .Values.clients }}
+---
+# Client certificate for "{{ .name }}": its CN is its Kafka principal.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: kafka-client-{{ .name }}
+  namespace: {{ .namespace }}
+spec:
+  secretName: kafka-client-{{ .name }}
+  commonName: {{ .name }}
+  usages: [client auth]
+  duration: {{ $.Values.tls.duration }}
+  renewBefore: {{ $.Values.tls.renewBefore }}
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    encoding: PKCS8
+    rotationPolicy: Always
+  issuerRef:
+    kind: ClusterIssuer
+    name: {{ $.Values.tls.issuer }}
+{{- end }}

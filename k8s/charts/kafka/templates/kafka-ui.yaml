@@ -29,6 +29,14 @@ spec:
       # Same reason as the broker: don't inject KAFKA_* service-link variables,
       # which Spring would bind as configuration.
       enableServiceLinks: false
+      # Its client certificate as a PEM keystore (key + chain), built in memory.
+      initContainers:
+        - name: keystore
+          image: {{ .Values.image }}
+          command: [bash, -ec, "cat /tls-src/tls.key /tls-src/tls.crt > /tls/keystore.pem"]
+          volumeMounts:
+            - {name: tls-src, mountPath: /tls-src, readOnly: true}
+            - {name: tls, mountPath: /tls}
       containers:
         - name: kafka-ui
           image: {{ .Values.ui.image }}
@@ -44,6 +52,17 @@ spec:
               value: "true"
             - name: DYNAMIC_CONFIG_ENABLED
               value: "false"
+            # mTLS as principal "kafka-ui", whose ACLs only allow reading.
+            - name: KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL
+              value: SSL
+            - name: KAFKA_CLUSTERS_0_PROPERTIES_SSL_KEYSTORE_TYPE
+              value: PEM
+            - name: KAFKA_CLUSTERS_0_PROPERTIES_SSL_KEYSTORE_LOCATION
+              value: /tls/keystore.pem
+            - name: KAFKA_CLUSTERS_0_PROPERTIES_SSL_TRUSTSTORE_TYPE
+              value: PEM
+            - name: KAFKA_CLUSTERS_0_PROPERTIES_SSL_TRUSTSTORE_LOCATION
+              value: /tls-src/ca.crt
           readinessProbe:
             httpGet:
               path: /actuator/health
@@ -52,4 +71,14 @@ spec:
             periodSeconds: 5
           resources:
             {{- toYaml .Values.ui.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tls-src, mountPath: /tls-src, readOnly: true}
+            - {name: tls, mountPath: /tls}
+      volumes:
+        - name: tls-src
+          secret:
+            secretName: kafka-client-kafka-ui
+        - name: tls
+          emptyDir:
+            medium: Memory
 {{- end }}

@@ -17,7 +17,7 @@ resource "helm_release" "pipeline" {
 
     kafka = {
       bootstrap = "kafka.kafka.svc.cluster.local:9092"
-      auth      = "none" # in-cluster only: no Service outside the cluster, no load balancer
+      auth      = "mtls" # TLS + client certificate; ACLs per component (charts/kafka)
       # Single broker: one replica per partition.
       replication       = 1
       minInsyncReplicas = 1

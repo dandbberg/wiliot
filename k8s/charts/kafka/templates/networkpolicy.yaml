@@ -1,0 +1,25 @@
+# Who may open a connection to the broker at all: the pipeline's namespace,
+# Kafka UI and the ACL Job. Everything else is dropped before TLS starts.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kafka
+spec:
+  podSelector:
+    matchLabels:
+      app: kafka
+  policyTypes: [Ingress]
+  ingress:
+    - ports:
+        - port: 9092
+      from:
+        {{- range .Values.allowedNamespaces }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+        {{- end }}
+        - podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [kafka-ui, kafka-acls]

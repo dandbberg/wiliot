@@ -59,6 +59,8 @@ spec:
           resources:
             {{- toYaml .Values.producer.resources | nindent 12 }}
           {{- include "pipeline.containerSecurity" . | nindent 10 }}
+          {{- include "pipeline.kafkaTlsMount" (dict "ctx" . "client" "producer") | nindent 10 }}
+      {{- include "pipeline.kafkaTlsVolume" (dict "ctx" . "client" "producer") | nindent 6 }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

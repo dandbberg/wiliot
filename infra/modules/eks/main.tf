@@ -155,6 +155,8 @@ resource "aws_eks_addon" "vpc_cni" {
   addon_name                  = "vpc-cni"
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
+  # Enforce Kubernetes NetworkPolicy (Kafka admits only the pipeline's pods).
+  configuration_values = jsonencode({ enableNetworkPolicy = "true" })
 }
 
 resource "aws_eks_addon" "kube_proxy" {

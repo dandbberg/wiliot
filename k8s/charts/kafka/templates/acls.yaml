@@ -1,0 +1,55 @@
+# Applies the ACLs from values.clients after every install/upgrade, connecting
+# as the broker's own principal (the only super user). Adding an ACL that
+# already exists is a no-op, so re-runs are safe.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-acls
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 10
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app: kafka-acls
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: kafka-acls
+          image: {{ .Values.image }}
+          command: [bash, -ec]
+          args:
+            - |
+              set -f # "*" in an ACL is a Kafka wildcard, not a shell glob
+              cat /tls-src/tls.key /tls-src/tls.crt > /tls/keystore.pem
+              cat > /tls/admin.properties <<EOF
+              security.protocol=SSL
+              ssl.keystore.type=PEM
+              ssl.keystore.location=/tls/keystore.pem
+              ssl.truststore.type=PEM
+              ssl.truststore.location=/tls-src/ca.crt
+              EOF
+              acl() { /opt/kafka/bin/kafka-acls.sh --bootstrap-server kafka.{{ .Release.Namespace }}.svc.cluster.local:9092 \
+                        --command-config /tls/admin.properties --add --force "$@" >/dev/null; }
+              {{- range .Values.clients }}
+              {{- $principal := .name }}
+              {{- range .acls }}
+              acl --allow-principal User:{{ $principal }} {{ . }} && echo "ok  User:{{ $principal }} {{ . }}"
+              {{- end }}
+              {{- end }}
+          volumeMounts:
+            - name: tls-src
+              mountPath: /tls-src
+              readOnly: true
+            - name: tls
+              mountPath: /tls
+      volumes:
+        - name: tls-src
+          secret:
+            secretName: kafka-broker-tls
+        - name: tls
+          emptyDir:
+            medium: Memory

@@ -1,5 +1,12 @@
-"""librdkafka client settings. KAFKA_AUTH=none locally, msk-iam on AWS."""
+"""librdkafka client settings, by KAFKA_AUTH:
 
+  none     plaintext (minikube)
+  mtls     TLS with a client certificate (EKS); the certificate's CN is the
+           Kafka principal the broker's ACLs are written for
+  msk-iam  SASL/OAUTHBEARER with IAM (MSK; not used here, kept for reference)
+"""
+
+import os
 import socket
 
 from . import config
@@ -19,7 +26,20 @@ def base_config() -> dict:
         "client.id": socket.gethostname(),
     }
     auth = config.env("KAFKA_AUTH", "none")
-    if auth == "msk-iam":
+    if auth == "mtls":
+        # cert-manager Secret mounted as files: ca.crt, tls.crt, tls.key.
+        tls_dir = config.env("KAFKA_TLS_DIR", "/etc/kafka-tls")
+        conf.update(
+            {
+                "security.protocol": "SSL",
+                "ssl.ca.location": os.path.join(tls_dir, "ca.crt"),
+                "ssl.certificate.location": os.path.join(tls_dir, "tls.crt"),
+                "ssl.key.location": os.path.join(tls_dir, "tls.key"),
+                # Verify the broker's certificate matches its DNS name.
+                "ssl.endpoint.identification.algorithm": "https",
+            }
+        )
+    elif auth == "msk-iam":
         conf.update(
             {
                 "security.protocol": "SASL_SSL",

@@ -9,7 +9,7 @@ spec:
   selector:
     app: kafka
   ports:
-    - name: client
+    - name: tls
       port: 9092
 ---
 apiVersion: apps/v1
@@ -31,9 +31,10 @@ spec:
     metadata:
       labels:
         app: kafka
+      annotations:
+        # Restart the broker when its configuration changes.
+        checksum/config: {{ include (print $.Template.BasePath "/kafka-config.yaml") . | sha256sum | trunc 16 }}
     spec:
-      # A Service named "kafka" makes Kubernetes inject KAFKA_PORT=tcp://...,
-      # which the image would read as broker config. Turn service links off.
       enableServiceLinks: false
       securityContext:
         fsGroup: 1000 # the image runs as appuser (1000); lets it write the EBS volume
@@ -41,43 +42,24 @@ spec:
       containers:
         - name: kafka
           image: {{ .Values.image }}
+          command: [bash, -ec]
+          args:
+            - |
+              # PEM keystore = private key followed by its certificate chain.
+              cat /etc/kafka/tls-src/tls.key /etc/kafka/tls-src/tls.crt > /etc/kafka/tls/keystore.pem
+              /opt/kafka/bin/kafka-storage.sh format --ignore-formatted \
+                -t {{ .Values.clusterId | quote }} -c /etc/kafka/config/server.properties
+              exec /opt/kafka/bin/kafka-server-start.sh /etc/kafka/config/server.properties
           ports:
             - containerPort: 9092
           env:
-            - name: CLUSTER_ID
-              value: {{ .Values.clusterId | quote }}
-            - name: KAFKA_NODE_ID
-              value: "1"
-            - name: KAFKA_PROCESS_ROLES
-              value: broker,controller
-            - name: KAFKA_LISTENERS
-              value: PLAINTEXT://:9092,CONTROLLER://:9093
-            - name: KAFKA_ADVERTISED_LISTENERS
-              value: PLAINTEXT://kafka.{{ .Release.Namespace }}.svc.cluster.local:9092
-            - name: KAFKA_CONTROLLER_LISTENER_NAMES
-              value: CONTROLLER
-            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
-              value: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
-              value: 1@localhost:9093
-            # Single broker: internal topics can't have more than one replica.
-            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
-              value: "1"
-            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
-              value: "1"
-            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
-              value: "1"
-            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
-              value: "false" # the pipeline's topic-init Job creates "trades" explicitly
-            # A subdirectory: a fresh ext4 volume has lost+found at its root,
-            # which Kafka would take for a malformed partition directory.
-            - name: KAFKA_LOG_DIRS
-              value: /var/lib/kafka/data/logs
             - name: KAFKA_HEAP_OPTS
               value: {{ .Values.heap | quote }}
+          # exec, not tcpSocket: the NetworkPolicy admits only listed pods, and
+          # a check from inside the pod doesn't depend on it.
           readinessProbe:
-            tcpSocket:
-              port: 9092
+            exec:
+              command: [bash, -c, "exec 3<>/dev/tcp/127.0.0.1/9092"]
             initialDelaySeconds: 10
             periodSeconds: 5
           resources:
@@ -85,6 +67,23 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/kafka/data
+            - name: config
+              mountPath: /etc/kafka/config
+            - name: tls-src
+              mountPath: /etc/kafka/tls-src
+              readOnly: true
+            - name: tls
+              mountPath: /etc/kafka/tls
+      volumes:
+        - name: config
+          configMap:
+            name: kafka-config
+        - name: tls-src
+          secret:
+            secretName: kafka-broker-tls
+        - name: tls
+          emptyDir:
+            medium: Memory # the combined key file never touches disk
   volumeClaimTemplates:
     - metadata:
         name: data

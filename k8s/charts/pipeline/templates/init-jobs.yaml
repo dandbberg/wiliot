@@ -66,4 +66,8 @@ spec:
             requests: {cpu: 50m, memory: 64Mi}
             limits: {memory: 128Mi}
           {{- include "pipeline.containerSecurity" $ | nindent 10 }}
+          {{- if eq .module "trades.topic" }}
+          {{- include "pipeline.kafkaTlsMount" (dict "ctx" $ "client" "topic-init") | nindent 10 }}
+      {{- include "pipeline.kafkaTlsVolume" (dict "ctx" $ "client" "topic-init") | nindent 6 }}
+          {{- end }}
 {{- end }}

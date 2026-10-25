@@ -57,6 +57,8 @@ spec:
           resources:
             {{- toYaml .Values.consumer.resources | nindent 12 }}
           {{- include "pipeline.containerSecurity" . | nindent 10 }}
+          {{- include "pipeline.kafkaTlsMount" (dict "ctx" . "client" "consumer") | nindent 10 }}
+      {{- include "pipeline.kafkaTlsVolume" (dict "ctx" . "client" "consumer") | nindent 6 }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

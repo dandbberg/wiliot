@@ -10,7 +10,7 @@ region: ca-central-1
 
 kafka:
   bootstrap: ""          # MSK bootstrap_brokers_sasl_iam, set by the k8s Terraform stack
-  auth: msk-iam          # msk-iam | none
+  auth: mtls             # mtls | none | msk-iam
   topic: trades
   partitions: 12
   replication: 3

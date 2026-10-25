@@ -13,6 +13,40 @@ resources:
   requests: {cpu: 250m, memory: 1536Mi}
   limits: {memory: 2Gi}
 
+# mTLS: every connection is TLS and must present a certificate from this
+# issuer (kafka-pki chart). The certificate's CN is the Kafka principal.
+tls:
+  issuer: kafka-ca
+  duration: 2160h    # 90 days; cert-manager renews 30 days before expiry
+  renewBefore: 720h
+
+# One certificate per client, issued into the namespace it runs in, plus what
+# that principal may do. Anything not listed is denied.
+clients:
+  - name: producer
+    namespace: trades
+    acls:
+      - "--topic trades --operation Write --operation Describe"
+  - name: consumer
+    namespace: trades
+    acls:
+      - "--topic trades --operation Read --operation Describe"
+      - "--group trades-consumer --operation Read"
+  - name: topic-init
+    namespace: trades
+    acls:
+      - "--topic trades --operation Create --operation Describe"
+  - name: kafka-ui   # read-only browsing
+    namespace: kafka
+    acls:
+      - "--topic * --operation Read --operation Describe --operation DescribeConfigs"
+      - "--group * --operation Describe"
+      - "--cluster --operation Describe --operation DescribeConfigs"
+
+# Only these may open a TCP connection to the broker at all (NetworkPolicy);
+# mTLS and ACLs then decide what they can do.
+allowedNamespaces: [trades]
+
 ui:
   enabled: true
   image: ghcr.io/kafbat/kafka-ui:v1.2.0

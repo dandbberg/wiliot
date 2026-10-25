@@ -44,5 +44,6 @@ resource "helm_release" "kafka" {
   wait      = true
   timeout   = 600
 
-  depends_on = [kubernetes_storage_class_v1.gp3]
+  # Certificates come from the kafka-ca issuer; client certs go into "trades".
+  depends_on = [kubernetes_storage_class_v1.gp3, helm_release.kafka_pki, kubernetes_namespace_v1.this["trades"]]
 }

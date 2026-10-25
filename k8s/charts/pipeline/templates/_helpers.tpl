@@ -73,3 +73,23 @@ readinessProbe:
   httpGet: {path: /readyz, port: health}
   periodSeconds: 10
 {{- end }}
+
+{{/* mTLS to Kafka: mount this component's cert-manager Secret (ca.crt, tls.crt,
+     tls.key). Call with (dict "ctx" $ "client" "<name>"). Empty unless kafka.auth=mtls. */}}
+{{- define "pipeline.kafkaTlsMount" -}}
+{{- if eq .ctx.Values.kafka.auth "mtls" }}
+volumeMounts:
+  - name: kafka-tls
+    mountPath: /etc/kafka-tls
+    readOnly: true
+{{- end }}
+{{- end }}
+
+{{- define "pipeline.kafkaTlsVolume" -}}
+{{- if eq .ctx.Values.kafka.auth "mtls" }}
+volumes:
+  - name: kafka-tls
+    secret:
+      secretName: kafka-client-{{ .client }}
+{{- end }}
+{{- end }}
