@@ -25,9 +25,21 @@ prometheus:
     ruleSelectorNilUsesHelmValues: false
     scrapeInterval: 15s
     evaluationInterval: 15s
-    retention: 2d
-    # emptyDir: metrics are lost if Prometheus restarts, but no EBS volume is
-    # created that could outlive a destroy.
+    # Metrics survive restarts and rescheduling on an EBS volume. The volume is
+    # deleted together with Prometheus, so destroy leaves nothing behind.
+    retention: 7d
+    retentionSize: 8GB # stay inside the 10Gi volume
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 10Gi
+    persistentVolumeClaimRetentionPolicy:
+      whenDeleted: Delete
+      whenScaled: Retain
     resources:
       requests: {cpu: 200m, memory: 512Mi}
       limits: {memory: 1536Mi}
@@ -42,7 +54,15 @@ grafana:
   image:
     tag: 12.3.1
   deploymentStrategy:
-    type: Recreate
+    type: Recreate # also required by the ReadWriteOnce volume below
+  # Dashboards, users and settings survive restarts. The PVC is a normal Helm
+  # resource, so uninstall (destroy) deletes it and its EBS volume.
+  persistence:
+    enabled: true
+    type: pvc
+    storageClassName: gp3
+    accessModes: [ReadWriteOnce]
+    size: 2Gi
   admin:
     existingSecret: grafana-admin-credentials # synced from Secrets Manager
     userKey: admin-user
