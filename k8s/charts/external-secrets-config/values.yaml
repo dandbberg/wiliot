@@ -1,0 +1,8 @@
+region: ca-central-1
+
+# Secrets Manager secret names (set by the k8s Terraform stack from infra outputs).
+grafanaAdminSecret: ""
+grafanaDbSecret: ""
+
+# Where Grafana and postgres_exporter run.
+namespace: monitoring

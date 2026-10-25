@@ -48,6 +48,10 @@ spec:
             {{- if eq $.Values.db.auth "iam" }}
             - name: DB_ADMIN_SECRET_ARN
               value: {{ required "db.adminSecretArn is required for auth=iam" $.Values.db.adminSecretArn | quote }}
+            {{- with $.Values.db.readerSecretArn }}
+            - name: DB_READER_SECRET_ARN
+              value: {{ . | quote }}
+            {{- end }}
             {{- else }}
             - name: DB_ADMIN_USER
               value: {{ $.Values.db.adminUser | quote }}

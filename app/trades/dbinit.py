@@ -50,7 +50,27 @@ def main():
             )
         cur.execute(SCHEMA)
         cur.execute(sql.SQL("GRANT SELECT, INSERT ON trades TO {}").format(role))
+        reader_secret = config.env("DB_READER_SECRET_ARN", "")
+        if reader_secret:
+            ensure_reader(cur, *db.secret_credentials(reader_secret))
     logger.info("schema ready", extra=log.fields(auth=auth, role=app_user))
+
+
+def ensure_reader(cur, user: str, password: str) -> None:
+    """Read-only user for Grafana and postgres_exporter, which can't use IAM tokens.
+
+    Password login on purpose: never a member of rds_iam (that would disable
+    password auth for it). It can read trades and server stats, nothing else.
+    """
+    role = sql.Identifier(user)
+    cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (user,))
+    if cur.fetchone() is None:
+        cur.execute(sql.SQL("CREATE ROLE {} LOGIN").format(role))
+        logger.info("created role", extra=log.fields(role=user))
+    cur.execute(sql.SQL("ALTER ROLE {} PASSWORD {}").format(role, sql.Literal(password)))
+    cur.execute(sql.SQL("GRANT pg_monitor TO {}").format(role))
+    cur.execute(sql.SQL("GRANT SELECT ON trades TO {}").format(role))
+    logger.info("reader ready", extra=log.fields(role=user))
 
 
 if __name__ == "__main__":

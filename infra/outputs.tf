@@ -41,7 +41,21 @@ output "db_master_secret_arn" {
 
 output "irsa_role_arns" {
   value = {
-    consumer = module.consumer_role.arn
-    db-init  = module.db_init_role.arn
+    consumer         = module.consumer_role.arn
+    db-init          = module.db_init_role.arn
+    external-secrets = module.external_secrets_role.arn
   }
+}
+
+# Names only: the values never leave Secrets Manager except through External Secrets.
+output "grafana_admin_secret_name" {
+  value = aws_secretsmanager_secret.grafana_admin.name
+}
+
+output "grafana_db_secret_name" {
+  value = aws_secretsmanager_secret.grafana_db.name
+}
+
+output "grafana_db_secret_arn" {
+  value = aws_secretsmanager_secret.grafana_db.arn
 }

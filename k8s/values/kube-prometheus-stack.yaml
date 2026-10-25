@@ -1,6 +1,8 @@
 # kube-prometheus-stack on EKS. Same choices as local/monitoring/, minus:
 #   - ingresses (no load balancer to clean up; reach UIs with kubectl port-forward)
-#   - the Grafana Postgres data source (the database accepts IAM logins only)
+#   - the Grafana Postgres data source host, which comes from infra outputs
+#     (added in monitoring.tf); its password comes from Secrets Manager via
+#     External Secrets, never from this file
 
 # Managed control plane: these components' metrics aren't scrapeable on EKS.
 kubeEtcd: {enabled: false}
@@ -42,9 +44,14 @@ grafana:
   deploymentStrategy:
     type: Recreate
   admin:
-    existingSecret: grafana-admin
+    existingSecret: grafana-admin-credentials # synced from Secrets Manager
     userKey: admin-user
     passwordKey: admin-password
+  envValueFrom:
+    TRADES_DB_PASSWORD:
+      secretKeyRef:
+        name: grafana-trades-db # synced from Secrets Manager
+        key: password
   grafana.ini:
     auth.anonymous:
       enabled: true

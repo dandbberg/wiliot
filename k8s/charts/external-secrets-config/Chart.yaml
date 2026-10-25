@@ -1,0 +1,5 @@
+apiVersion: v2
+name: external-secrets-config
+description: Secrets Manager store and the ExternalSecrets synced from it
+type: application
+version: 0.1.0

@@ -26,6 +26,9 @@ db:
   user: consumer
   sslmode: prefer        # only used with auth=password; iam always uses verify-full
   adminSecretArn: ""     # auth=iam: RDS-managed master secret, read only by the dbinit Job
+  # Optional: Secrets Manager secret {username, password} for a read-only user
+  # (Grafana, postgres_exporter). dbinit creates it; empty = no reader user.
+  readerSecretArn: ""
   # auth=password only: Secret with keys admin-password and consumer-password.
   passwordSecret: ""
   adminUser: postgres

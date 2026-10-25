@@ -64,7 +64,8 @@ module "consumer_role" {
   })
 }
 
-# db-init: read the RDS-managed master secret, to create the users. Nothing else.
+# db-init: read the RDS-managed master secret (to create the users) and the
+# grafana-db secret (to set that read-only user's password). Nothing else.
 module "db_init_role" {
   source                   = "./modules/irsa-role"
   name                     = "${local.name}-irsa-db-init"
@@ -79,7 +80,7 @@ module "db_init_role" {
     Statement = [{
       Effect   = "Allow"
       Action   = "secretsmanager:GetSecretValue"
-      Resource = module.rds.master_secret_arn
+      Resource = [module.rds.master_secret_arn, aws_secretsmanager_secret.grafana_db.arn]
     }]
   })
 }

@@ -4,23 +4,38 @@
 #   rows vs distinct (symbol, trade_id)  -> must be equal (no duplicates)
 #   missing trade ids                    -> holes in each symbol's id sequence,
 #                                           ignoring the last 30s (still settling)
+#
+# Logs in as the read-only "grafana" user. Its password is read inside the pod
+# from the grafana-trades-db Secret (synced from Secrets Manager by External
+# Secrets); it never reaches this machine.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-export AWS_REGION="${AWS_REGION:-ca-central-1}"
 
 DB_HOST=$(terraform -chdir="$ROOT/infra" output -raw db_host)
-SECRET=$(terraform -chdir="$ROOT/infra" output -raw db_master_secret_arn)
-PGPASSWORD=$(aws secretsmanager get-secret-value --secret-id "$SECRET" --query SecretString --output text \
-  | python3 -c 'import json,sys; print(json.load(sys.stdin)["password"])')
 
-kubectl -n trades run "check-db-$RANDOM" --rm -i --restart=Never --quiet --image=postgres:17 \
-  --env=PGPASSWORD="$PGPASSWORD" --env=PGSSLMODE=require -- \
-  psql -h "$DB_HOST" -U trades_admin -d trades -tA -F ' ' -c "
+SQL="
 WITH gaps AS (
   SELECT trade_id - lag(trade_id) OVER (PARTITION BY symbol ORDER BY trade_id) - 1 AS gap
   FROM trades WHERE trade_time < now() - interval '30 seconds')
 SELECT 'rows='     || (SELECT count(*) FROM trades),
        'distinct=' || (SELECT count(DISTINCT (symbol, trade_id)) FROM trades),
        'missing='  || coalesce((SELECT sum(gap) FROM gaps WHERE gap > 0), 0),
-       'newest_trade_age_s=' || (SELECT round(extract(epoch FROM now() - max(trade_time))::numeric, 1) FROM trades);" \
-  2>&1 | grep -v -e '^pod ' -e "couldn't attach" -e '^$'
+       'newest_trade_age_s=' || (SELECT round(extract(epoch FROM now() - max(trade_time))::numeric, 1) FROM trades);"
+
+OVERRIDES=$(python3 - "$DB_HOST" "$SQL" <<'EOF'
+import json, sys
+host, sql = sys.argv[1], sys.argv[2]
+print(json.dumps({"spec": {"containers": [{
+    "name": "psql",
+    "image": "postgres:17",
+    "command": ["psql", "-h", host, "-U", "grafana", "-d", "trades", "-tA", "-F", " ", "-c", sql],
+    "env": [
+        {"name": "PGSSLMODE", "value": "require"},
+        {"name": "PGPASSWORD", "valueFrom": {"secretKeyRef": {"name": "grafana-trades-db", "key": "password"}}},
+    ],
+}]}}))
+EOF
+)
+
+kubectl -n monitoring run "check-db-$RANDOM" --rm -i --restart=Never --quiet --image=postgres:17 \
+  --overrides="$OVERRIDES" 2>&1 | grep -v -e '^pod ' -e "couldn't attach" -e '^$'

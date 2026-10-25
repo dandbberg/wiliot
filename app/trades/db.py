@@ -18,14 +18,18 @@ def _iam_token(host: str, port: int, user: str) -> str:
     )
 
 
-def _admin_secret() -> tuple[str, str]:
-    """Master credentials that RDS keeps in Secrets Manager; read only by db-init."""
+def secret_credentials(arn: str) -> tuple[str, str]:
+    """(username, password) from a Secrets Manager JSON secret."""
     import boto3
 
-    arn = config.env("DB_ADMIN_SECRET_ARN")
     secret = boto3.client("secretsmanager", region_name=config.REGION).get_secret_value(SecretId=arn)
     parsed = json.loads(secret["SecretString"])
     return parsed["username"], parsed["password"]
+
+
+def _admin_secret() -> tuple[str, str]:
+    """Master credentials that RDS keeps in Secrets Manager; read only by db-init."""
+    return secret_credentials(config.env("DB_ADMIN_SECRET_ARN"))
 
 
 def connect(admin: bool = False) -> psycopg.Connection:

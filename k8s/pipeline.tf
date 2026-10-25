@@ -30,6 +30,8 @@ resource "helm_release" "pipeline" {
       auth           = "iam" # consumer logs in with its IAM role; no password
       user           = "consumer"
       adminSecretArn = local.infra.db_master_secret_arn # read only by db-init
+      # db-init creates the read-only "grafana" user with this secret's password.
+      readerSecretArn = local.infra.grafana_db_secret_arn
     }
 
     serviceAccounts = {
@@ -41,7 +43,7 @@ resource "helm_release" "pipeline" {
 
     monitoring = {
       enabled   = true
-      dashboard = "trades-pipeline-iam.json"
+      dashboard = "trades-pipeline.json" # same as minikube, SQL panels included
     }
   })]
 
