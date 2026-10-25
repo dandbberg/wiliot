@@ -1,0 +1,2 @@
+# Dashboard generator: source for dashboards/*.json, not part of the chart.
+dashboards/generate.py

@@ -1,0 +1,87 @@
+{{- if and .Values.monitoring.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1") }}
+# Scrape /metrics on the producer and consumer pods (same port as the probes).
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: pipeline
+  labels:
+    {{- include "pipeline.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [producer, consumer]
+  podMetricsEndpoints:
+    - port: health
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: pipeline
+  labels:
+    {{- include "pipeline.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: trades-pipeline
+      rules:
+        # The freshness SLO from the assignment: p99 trade-time -> in-Postgres latency.
+        - record: trades:ingest_latency_seconds:p99_5m
+          expr: histogram_quantile(0.99, sum by (le) (rate(trades_ingest_latency_seconds_bucket[5m])))
+        - alert: TradesFreshnessSLOBreached
+          expr: trades:ingest_latency_seconds:p99_5m > {{ .Values.monitoring.freshnessSloSeconds }}
+          for: 5m
+          labels: {severity: critical, pipeline: trades}
+          annotations:
+            summary: "p99 ingest latency {{`{{ $value | humanizeDuration }}`}} is above the {{ .Values.monitoring.freshnessSloSeconds }}s SLO"
+        # Dead consumers export nothing, so absence must alert too.
+        - alert: TradesNotIngested
+          expr: sum(rate(trades_inserted_total[2m])) == 0 or absent(trades_inserted_total)
+          for: 2m
+          labels: {severity: critical, pipeline: trades}
+          annotations:
+            summary: No trades have been written to Postgres for 2 minutes
+        - alert: TradesProducersDown
+          expr: sum(trades_ws_connected) == 0 or absent(trades_ws_connected)
+          for: 1m
+          labels: {severity: critical, pipeline: trades}
+          annotations:
+            summary: No producer is connected to Binance; trades are being lost (no replay)
+        - alert: TradesProducerRedundancyLost
+          expr: sum(trades_ws_connected) < {{ .Values.producer.replicas }}
+          for: 2m
+          labels: {severity: warning, pipeline: trades}
+          annotations:
+            summary: "Only {{`{{ $value }}`}} of {{ .Values.producer.replicas }} producers connected; a reconnect now would lose trades"
+        - alert: TradesConsumerLagHigh
+          expr: sum(trades_kafka_consumer_lag) > {{ .Values.monitoring.consumerLagThreshold }}
+          for: 5m
+          labels: {severity: warning, pipeline: trades}
+          annotations:
+            summary: "Consumers are {{`{{ $value }}`}} messages behind"
+        - alert: TradesMalformedMessages
+          expr: increase(trades_malformed_total[10m]) > 0
+          labels: {severity: warning, pipeline: trades}
+          annotations:
+            summary: Malformed trade messages were skipped
+        - alert: TradesDatabaseUnavailable
+          expr: increase(trades_db_retries_total[2m]) > 0
+          for: 1m
+          labels: {severity: critical, pipeline: trades}
+          annotations:
+            summary: Consumers are retrying inserts; Postgres is unreachable
+---
+# Picked up by the Grafana sidecar (label grafana_dashboard).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pipeline-dashboard
+  labels:
+    {{- include "pipeline.labels" . | nindent 4 }}
+    grafana_dashboard: "1"
+data:
+  trades-pipeline.json: |-
+{{ .Files.Get (printf "dashboards/%s" .Values.monitoring.dashboard) | indent 4 }}
+{{- end }}

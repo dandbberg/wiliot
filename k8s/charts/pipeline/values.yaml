@@ -1,0 +1,61 @@
+# Defaults describe the AWS deployment (MSK IAM + RDS IAM auth).
+# local/values.yaml overrides them for minikube.
+
+image:
+  repository: trades-app
+  tag: dev
+  pullPolicy: IfNotPresent
+
+region: ca-central-1
+
+kafka:
+  bootstrap: ""          # MSK bootstrap_brokers_sasl_iam, set by the k8s Terraform stack
+  auth: msk-iam          # msk-iam | none
+  topic: trades
+  partitions: 12
+  replication: 3
+  minInsyncReplicas: 2
+  retentionHours: 72
+  consumerGroup: trades-consumer
+
+db:
+  host: ""               # RDS endpoint, set by the k8s Terraform stack
+  port: 5432
+  name: trades
+  auth: iam              # iam | password
+  user: consumer
+  sslmode: prefer        # only used with auth=password; iam always uses verify-full
+  adminSecretArn: ""     # auth=iam: RDS-managed master secret, read only by the dbinit Job
+  # auth=password only: Secret with keys admin-password and consumer-password.
+  passwordSecret: ""
+  adminUser: postgres
+
+# Pre-created by Terraform in AWS with the eks.amazonaws.com/role-arn (IRSA) annotation.
+serviceAccounts:
+  producer: default
+  consumer: default
+  dbAdmin: default
+  topicAdmin: default
+
+producer:
+  replicas: 2
+  symbols: btcusdt,ethusdt,solusdt,bnbusdt,xrpusdt,adausdt,dogeusdt,avaxusdt,linkusdt,maticusdt,polusdt
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {memory: 256Mi}
+
+monitoring:
+  # PodMonitor, alert rules and Grafana dashboard. Needs the Prometheus Operator
+  # (kube-prometheus-stack); rendered only when its CRDs are present.
+  enabled: false
+  freshnessSloSeconds: 2
+  # trades-pipeline-iam.json drops panels that need a DB password (SQL, postgres_exporter).
+  dashboard: trades-pipeline.json
+  consumerLagThreshold: 5000
+
+consumer:
+  replicas: 2
+  batchSize: 500
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {memory: 256Mi}

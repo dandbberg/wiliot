@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: producer
+  labels:
+    {{- include "pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/name: producer
+spec:
+  replicas: {{ .Values.producer.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: producer
+  strategy:
+    # Never drop below the configured count: each replica is an independent
+    # WebSocket covering the other's reconnect gaps.
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: producer
+    spec:
+      serviceAccountName: {{ .Values.serviceAccounts.producer }}
+      terminationGracePeriodSeconds: 30
+      {{- include "pipeline.podSecurity" . | nindent 6 }}
+      # Spread across nodes (and zones, where there are several): two replicas on
+      # one node would fail together, which defeats running two.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: producer
+          # Count only this rollout's pods; otherwise old, terminating pods skew
+          # where the new ones go.
+          matchLabelKeys: [pod-template-hash]
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: producer
+      containers:
+        - name: producer
+          image: {{ include "pipeline.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: [trades.producer]
+          env:
+            {{- include "pipeline.regionEnv" . | nindent 12 }}
+            {{- include "pipeline.kafkaEnv" . | nindent 12 }}
+            - name: SYMBOLS
+              value: {{ .Values.producer.symbols | quote }}
+          ports:
+            - name: health
+              containerPort: 8080
+          {{- include "pipeline.probes" . | nindent 10 }}
+          resources:
+            {{- toYaml .Values.producer.resources | nindent 12 }}
+          {{- include "pipeline.containerSecurity" . | nindent 10 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: producer
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: producer

@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consumer
+  labels:
+    {{- include "pipeline.labels" . | nindent 4 }}
+    app.kubernetes.io/name: consumer
+spec:
+  replicas: {{ .Values.consumer.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: consumer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: consumer
+    spec:
+      serviceAccountName: {{ .Values.serviceAccounts.consumer }}
+      # Enough time to finish the in-flight batch, commit, and leave the group.
+      terminationGracePeriodSeconds: 30
+      {{- include "pipeline.podSecurity" . | nindent 6 }}
+      # Spread across nodes (and zones, where there are several): two replicas on
+      # one node would fail together, which defeats running two.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: consumer
+          # Count only this rollout's pods; otherwise old, terminating pods skew
+          # where the new ones go.
+          matchLabelKeys: [pod-template-hash]
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: consumer
+      containers:
+        - name: consumer
+          image: {{ include "pipeline.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: [trades.consumer]
+          env:
+            {{- include "pipeline.regionEnv" . | nindent 12 }}
+            {{- include "pipeline.kafkaEnv" . | nindent 12 }}
+            {{- include "pipeline.dbEnv" . | nindent 12 }}
+            - name: KAFKA_GROUP
+              value: {{ .Values.kafka.consumerGroup | quote }}
+            - name: BATCH_SIZE
+              value: {{ .Values.consumer.batchSize | quote }}
+          ports:
+            - name: health
+              containerPort: 8080
+          {{- include "pipeline.probes" . | nindent 10 }}
+          resources:
+            {{- toYaml .Values.consumer.resources | nindent 12 }}
+          {{- include "pipeline.containerSecurity" . | nindent 10 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: consumer
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: consumer
