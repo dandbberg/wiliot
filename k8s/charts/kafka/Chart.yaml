@@ -1,6 +1,6 @@
 apiVersion: v2
 name: kafka
-description: Single-broker KRaft Kafka on a persistent volume (lab sizing)
+description: 3-broker KRaft Kafka with mTLS, ACLs and persistent volumes
 type: application
-version: 0.2.0
+version: 0.3.0
 appVersion: "4.1.0"

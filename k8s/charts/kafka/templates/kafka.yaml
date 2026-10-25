@@ -1,6 +1,8 @@
-# One broker, also its own KRaft controller. Lab sizing: a restart pauses
-# ingestion briefly (producers buffer, consumers resume from committed offsets).
-# Production: 3 brokers across AZs with RF 3 / min.insync.replicas 2, or MSK.
+# {{ .Values.replicas }} brokers, each also a KRaft controller (combined mode). Topics are
+# replicated 3x and need 2 in-sync copies to accept a write, so any one broker
+# can be lost (node failure, drain, upgrade) without stopping producers.
+
+# Clients bootstrap here, then talk to each broker by its own name.
 apiVersion: v1
 kind: Service
 metadata:
@@ -12,14 +14,34 @@ spec:
     - name: tls
       port: 9092
 ---
+# Stable per-broker DNS names (broker-N.kafka-brokers...), used in advertised
+# listeners and the controller quorum.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-brokers
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true # the quorum must form before any broker is "ready"
+  selector:
+    app: kafka
+  ports:
+    - name: tls
+      port: 9092
+    - name: controller
+      port: 9093
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: kafka
+  name: broker
 spec:
-  serviceName: kafka
-  replicas: 1
-  # Deleting Kafka (helm uninstall / terraform destroy) deletes its volume too,
+  serviceName: kafka-brokers
+  replicas: {{ .Values.replicas }}
+  # All brokers start together: each needs a quorum of the others to come up, so
+  # the default one-at-a-time ordering would deadlock.
+  podManagementPolicy: Parallel
+  # Deleting Kafka (helm uninstall / terraform destroy) deletes its volumes too,
   # so nothing is left behind in the account.
   persistentVolumeClaimRetentionPolicy:
     whenDeleted: Delete
@@ -32,19 +54,31 @@ spec:
       labels:
         app: kafka
       annotations:
-        # Restart the broker when its configuration changes.
+        # Restart brokers (one at a time) when their configuration changes.
         checksum/config: {{ include (print $.Template.BasePath "/kafka-config.yaml") . | sha256sum | trunc 16 }}
     spec:
       enableServiceLinks: false
       securityContext:
         fsGroup: 1000 # the image runs as appuser (1000); lets it write the EBS volume
-      terminationGracePeriodSeconds: 60 # time for a clean shutdown and log flush
+      terminationGracePeriodSeconds: 60 # time for a clean shutdown and leadership handover
+      # One broker per node where possible, so a node loss takes at most one.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: kafka
       containers:
         - name: kafka
           image: {{ .Values.image }}
           command: [bash, -ec]
           args:
             - |
+              # Per-broker identity from the pod name: broker-2 -> node.id 2.
+              id="${HOSTNAME##*-}"
+              sed -e "s/__NODE_ID__/${id}/" -e "s/__HOST__/${HOSTNAME}/" \
+                /etc/kafka/config-template/server.properties > /etc/kafka/config/server.properties
               # PEM keystore = private key followed by its certificate chain.
               cat /etc/kafka/tls-src/tls.key /etc/kafka/tls-src/tls.crt > /etc/kafka/tls/keystore.pem
               /opt/kafka/bin/kafka-storage.sh format --ignore-formatted \
@@ -52,6 +86,7 @@ spec:
               exec /opt/kafka/bin/kafka-server-start.sh /etc/kafka/config/server.properties
           ports:
             - containerPort: 9092
+            - containerPort: 9093
           env:
             - name: KAFKA_HEAP_OPTS
               value: {{ .Values.heap | quote }}
@@ -67,6 +102,8 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/kafka/data
+            - name: config-template
+              mountPath: /etc/kafka/config-template
             - name: config
               mountPath: /etc/kafka/config
             - name: tls-src
@@ -75,9 +112,11 @@ spec:
             - name: tls
               mountPath: /etc/kafka/tls
       volumes:
-        - name: config
+        - name: config-template
           configMap:
             name: kafka-config
+        - name: config
+          emptyDir: {}
         - name: tls-src
           secret:
             secretName: kafka-broker-tls
@@ -93,3 +132,15 @@ spec:
         resources:
           requests:
             storage: {{ .Values.storage.size }}
+---
+# Voluntary disruptions (drains, upgrades) take one broker at a time; with
+# min.insync.replicas=2 the other two keep accepting writes.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kafka
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: kafka

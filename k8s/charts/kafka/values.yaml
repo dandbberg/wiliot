@@ -1,7 +1,11 @@
 image: apache/kafka:4.1.0
 
+# Brokers (each also a KRaft controller). 3 = the smallest quorum that survives
+# losing one, and the replication factor below.
+replicas: 3
+
 # KRaft needs a fixed cluster id: 22 chars of URL-safe base64.
-clusterId: dan-berg-eks-kafka-001
+clusterId: dan-berg-eks-kafka-3br
 
 storage:
   className: gp3
@@ -36,6 +40,11 @@ clients:
     namespace: trades
     acls:
       - "--topic trades --operation Create --operation Describe"
+  - name: keda       # autoscaler: reads the consumer group's lag, nothing else
+    namespace: trades
+    acls:
+      - "--topic trades --operation Describe"
+      - "--group trades-consumer --operation Describe"
   - name: kafka-ui   # read-only browsing
     namespace: kafka
     acls:
@@ -45,7 +54,7 @@ clients:
 
 # Only these may open a TCP connection to the broker at all (NetworkPolicy);
 # mTLS and ACLs then decide what they can do.
-allowedNamespaces: [trades]
+allowedNamespaces: [trades, keda]
 
 ui:
   enabled: true

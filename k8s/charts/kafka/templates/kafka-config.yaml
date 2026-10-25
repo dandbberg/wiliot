@@ -1,6 +1,8 @@
 # Broker configuration. Configured with an explicit server.properties instead of
 # the image's KAFKA_* environment translation: that path insists on JKS
 # keystores with password files; we use unencrypted PEM from cert-manager.
+# __NODE_ID__ and __HOST__ are filled in per broker at startup.
+{{- $ns := .Release.Namespace }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -8,13 +10,13 @@ metadata:
 data:
   server.properties: |
     process.roles=broker,controller
-    node.id=1
-    controller.quorum.voters=1@localhost:9093
+    node.id=__NODE_ID__
+    controller.quorum.voters={{ range $i, $_ := until (int .Values.replicas) }}{{ if $i }},{{ end }}{{ $i }}@broker-{{ $i }}.kafka-brokers.{{ $ns }}.svc.cluster.local:9093{{ end }}
 
-    # Clients: TLS with a client certificate on 9092. Controller: also TLS, and
-    # bound to localhost only, so it isn't reachable from other pods.
-    listeners=SSL://:9092,CONTROLLER://localhost:9093
-    advertised.listeners=SSL://kafka.{{ .Release.Namespace }}.svc.cluster.local:9092
+    # Clients and replication on 9092, controller quorum on 9093; both TLS with
+    # client certificates. The NetworkPolicy keeps 9093 to the brokers.
+    listeners=SSL://:9092,CONTROLLER://:9093
+    advertised.listeners=SSL://__HOST__.kafka-brokers.{{ $ns }}.svc.cluster.local:9092
     listener.security.protocol.map=SSL:SSL,CONTROLLER:SSL
     controller.listener.names=CONTROLLER
     inter.broker.listener.name=SSL
@@ -34,9 +36,13 @@ data:
     # A subdirectory: a fresh ext4 volume has lost+found at its root, which
     # Kafka would take for a malformed partition directory.
     log.dirs=/var/lib/kafka/data/logs
-    # Single broker: internal topics can't have more than one replica.
-    offsets.topic.replication.factor=1
-    transaction.state.log.replication.factor=1
-    transaction.state.log.min.isr=1
+
+    # Every partition on all 3 brokers; a write needs 2 of them.
+    default.replication.factor=3
+    min.insync.replicas=2
+    offsets.topic.replication.factor=3
+    transaction.state.log.replication.factor=3
+    transaction.state.log.min.isr=2
+    unclean.leader.election.enable=false
     auto.create.topics.enable=false
     group.initial.rebalance.delay.ms=0

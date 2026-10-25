@@ -1,6 +1,6 @@
-# Broker certificate: server auth for clients, and client auth for the broker's
-# own connections (inter-broker and controller listeners). "localhost" is there
-# because the controller listener is bound to localhost.
+# Broker certificate, shared by all brokers: server auth for clients, and client
+# auth for the brokers' own connections (replication, controller quorum). It
+# names the bootstrap Service and every broker's own DNS name.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -13,7 +13,9 @@ spec:
     - kafka.{{ .Release.Namespace }}
     - kafka.{{ .Release.Namespace }}.svc
     - kafka.{{ .Release.Namespace }}.svc.cluster.local
-    - localhost
+    {{- range $i, $_ := until (int .Values.replicas) }}
+    - broker-{{ $i }}.kafka-brokers.{{ $.Release.Namespace }}.svc.cluster.local
+    {{- end }}
   usages: [server auth, client auth]
   duration: {{ .Values.tls.duration }}
   renewBefore: {{ .Values.tls.renewBefore }}
