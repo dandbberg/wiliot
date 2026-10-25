@@ -15,6 +15,8 @@ WS_LAST_MESSAGE = Gauge("trades_ws_last_message_timestamp_seconds", "Unix time o
 KAFKA_DELIVERED = Counter("trades_kafka_delivered_total", "Messages acknowledged by Kafka")
 KAFKA_DELIVERY_FAILED = Counter("trades_kafka_delivery_failed_total", "Messages Kafka failed to accept")
 KAFKA_QUEUE = Gauge("trades_kafka_producer_queue_messages", "Messages waiting in the local producer queue")
+KAFKA_PENDING = Gauge("trades_kafka_retry_pending", "Trades Kafka refused, held for retry")
+KAFKA_DROPPED = Counter("trades_kafka_dropped_total", "Trades dropped because the retry queue was full")
 
 # --- consumer ---------------------------------------------------------------
 CONSUMED = Counter("trades_consumed_total", "Kafka messages consumed")
@@ -26,7 +28,9 @@ DB_RETRIES = Counter("trades_db_retries_total", "Insert attempts that failed bec
 INGEST_LATENCY = Histogram(
     "trades_ingest_latency_seconds",
     "Trade time (Binance) to committed in Postgres",
-    buckets=(0.05, 0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 5, 10, 30, 60, 300),
+    # Fine above the SLO too, so the p99 reported during an incident is close to
+    # the real one (a 60 -> 300 s jump once overstated 122 s as 282 s).
+    buckets=(0.05, 0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 300, 600),
 )
 DB_INSERT_SECONDS = Histogram(
     "trades_db_insert_seconds",
