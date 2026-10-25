@@ -26,7 +26,7 @@ export KUBECONFIG := $(CURDIR)/eks.kubeconfig
 
 CHAOS := consumer producer broker drain outbox replay keda security
 
-.PHONY: up destroy infra images workloads kubeconfig urls ui health db chaos $(addprefix chaos-,$(CHAOS)) test validate init-infra init-k8s
+.PHONY: up destroy infra images workloads access kubeconfig urls ui health db chaos $(addprefix chaos-,$(CHAOS)) test validate init-infra init-k8s
 
 ## Full deploy: infrastructure, then images, then workloads; ends with the UI
 ## links and a first health check (not fatal: the pipeline may still be warming up).
@@ -50,6 +50,11 @@ images: init-infra
 workloads: init-k8s
 	$(K8S) apply -input=false $(K8S_VARS) -var image_tag=$(TAG)
 	$(MAKE) kubeconfig
+
+## For another AWS admin of the account: make yourself cluster admin, then get kubectl.
+access: init-infra
+	@CLUSTER=$$($(INFRA) output -raw cluster_name) ./scripts/grant-access.sh
+	@$(MAKE) -s kubeconfig
 
 kubeconfig: init-infra
 	@aws eks update-kubeconfig --name $$($(INFRA) output -raw cluster_name) --kubeconfig $(KUBECONFIG) >/dev/null
