@@ -40,9 +40,9 @@ variable "node_instance_type" {
 }
 
 variable "node_count" {
-  description = "Lab sizing: two nodes so pods (Kafka included) can be rescheduled; production would run 3+ across 3 AZs."
+  description = "One node per Kafka broker (3), so losing or draining a node takes down at most one broker."
   type        = number
-  default     = 2
+  default     = 3
 }
 
 variable "db_instance_class" {

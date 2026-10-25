@@ -40,7 +40,9 @@ resource "aws_db_instance" "this" {
   db_subnet_group_name   = aws_db_subnet_group.this.name
   vpc_security_group_ids = [aws_security_group.rds.id]
   publicly_accessible    = false
-  multi_az               = false # documented shortcut
+  # Synchronous standby in another AZ; RDS fails over automatically (the
+  # endpoint name stays the same, so clients just reconnect).
+  multi_az = true
 
   # TLS is enforced by default on PostgreSQL 15+ (rds.force_ssl=1).
 

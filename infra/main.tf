@@ -23,9 +23,9 @@ module "eks" {
   kubernetes_version       = var.kubernetes_version
   permissions_boundary_arn = var.permissions_boundary_arn
   subnet_ids               = module.network.private_subnet_ids
-  # Lab: all nodes in one AZ. Kafka's EBS volume is AZ-bound, so with nodes in a
-  # single AZ its pod can move to the other node when one is drained.
-  # Production: nodes across all three AZs and a broker per AZ.
+  # Nodes in one AZ: EBS volumes are AZ-bound, so a broker evicted by a drain can
+  # restart on another node with its volume. Production would also spread nodes
+  # and brokers across AZs (and accept that an AZ's broker waits for its AZ).
   node_subnet_ids    = [module.network.private_subnet_ids[0]]
   node_instance_type = var.node_instance_type
   node_count         = var.node_count
