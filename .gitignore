@@ -1,0 +1,58 @@
+# --- Assignment material: the environment PDF contains a console password ---
+*.pdf
+environment*.md
+
+# --- Credentials / secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials
+.aws/
+kubeconfig
+*.kubeconfig
+secrets/
+*.secret.*
+
+# --- Terraform ---
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+# tfvars may carry environment-specific values; only the example is committed
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+# NOTE: .terraform.lock.hcl is intentionally committed (pins provider checksums)
+
+# --- Helm ---
+k8s/charts/*/charts/
+k8s/charts/*/*.tgz
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# --- OS / editors ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
