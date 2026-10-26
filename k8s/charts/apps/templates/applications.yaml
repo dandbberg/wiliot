@@ -27,7 +27,7 @@ the reverse order (scripts/argo-teardown.sh).
         "metricServer" (dict "requests" (dict "cpu" "50m" "memory" "64Mi") "limits" (dict "memory" "256Mi"))
         "webhooks" (dict "requests" (dict "cpu" "10m" "memory" "64Mi") "limits" (dict "memory" "256Mi")))))))
 
-  (dict "name" "external-secrets" "wave" 0 "namespace" "external-secrets"
+  (dict "name" "external-secrets" "wave" 0 "namespace" "external-secrets" "serverSide" true
     "source" (dict "repoURL" "https://charts.external-secrets.io" "chart" "external-secrets" "targetRevision" "2.14.0"
       "helm" (dict "valuesObject" (dict
         "serviceAccount" (dict "name" "external-secrets"
@@ -116,7 +116,7 @@ spec:
     syncOptions:
       - RespectIgnoreDifferences=true
       {{- if .serverSide }}
-      - ServerSideApply=true # CRDs too large for client-side apply
+      - ServerSideApply=true # CRDs too large for client-side apply (256 KB annotation limit)
       {{- end }}
   ignoreDifferences:
     # KEDA owns the consumers' replica count.
