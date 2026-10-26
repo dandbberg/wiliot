@@ -1,0 +1,42 @@
+name: ci
+
+# Every push and pull request: unit tests, Terraform and Helm checks. No AWS
+# access: the image is built by make up, and Argo CD deploys from this repo.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit tests (inside the app image)
+        run: make test
+
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - uses: azure/setup-helm@v4
+      - name: Terraform format
+        run: terraform fmt -check -recursive
+      - name: Terraform validate
+        run: make validate
+      - name: Helm lint
+        run: |
+          for c in k8s/charts/*/; do
+            helm lint "$c" --quiet \
+              --set repoURL=https://example.invalid/repo.git \
+              --set adminSecret=x --set 'allowedCidrs={192.0.2.1/32}' \
+              --set db.host=x --set image.repository=x --set image.tag=x
+          done
