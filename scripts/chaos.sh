@@ -166,7 +166,14 @@ t_keda() {
     [ "$r" = "3/3" ] && break; pause 20
   done
   say "(Argo CD auto-sync back on: it restores BATCH_SIZE)"; argo_resume
-  sleep 20; kubectl -n trades rollout status deploy/consumer --timeout=300s >/dev/null
+  # Wait for Argo to really restore it, for the restart, and for the consumers
+  # to catch up: measuring during the restart counted late trades as missing.
+  local deadline=$(( $(date +%s) + 300 ))
+  until [ "$(kubectl -n trades get deploy consumer -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="BATCH_SIZE")].value}')" != "1" ] \
+        || [ "$(date +%s)" -gt $deadline ]; do sleep 5; done
+  kubectl -n trades rollout status deploy/consumer --timeout=300s >/dev/null
+  until [ "$(lag)" -lt 1000 ] || [ "$(date +%s)" -gt $deadline ]; do sleep 10; done
+  say "consumers back to BATCH_SIZE=$(kubectl -n trades get deploy consumer -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="BATCH_SIZE")].value}'), lag $(lag)"
   finish
 }
 
