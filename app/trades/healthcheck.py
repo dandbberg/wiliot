@@ -2,8 +2,9 @@
 
     kubectl -n trades exec deploy/consumer -- python -m trades.healthcheck
 
-Asks Prometheus which pipeline alerts are firing (the PrometheusRule in the
-chart: freshness SLO, nothing ingested, producers down, lag, DB unavailable...).
+UNHEALTHY when the freshness SLO is breached right now (p99 over the last 5
+minutes above 2 s) or any pipeline alert is firing (the PrometheusRule in the
+chart: nothing ingested, producers down, lag, DB unavailable...).
 Exit 0 = HEALTHY, 1 = UNHEALTHY, 2 = UNKNOWN (no data or Prometheus unreachable):
 silence is not reported as success.
 """
@@ -13,6 +14,8 @@ import os
 import sys
 import urllib.parse
 import urllib.request
+
+SLO_SECONDS = 2.0  # p99, trade time -> stored in Postgres, over 5 minutes
 
 PROMETHEUS = os.environ.get(
     "PROMETHEUS_URL", "http://monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090"
@@ -34,18 +37,19 @@ def main() -> int:
         return 2
 
     firing = [a for a in alerts if a["alertstate"] == "firing"]
-    # Pending = condition true but not yet for its full "for:" window (e.g. a
-    # latency spike during a rollout). Shown, but not counted as unhealthy.
+    # Alerts wait out their "for:" window before firing (that's about paging).
+    # The SLO itself is judged on its own 5-minute p99, so no extra wait here.
     for alert in sorted(alerts, key=lambda a: a["alertstate"]):
         print(f"{alert['alertstate'].upper():10} {alert.get('severity', ''):8} {alert['alertname']}")
     latency = f"{float(p99[0]['value'][1]):.2f}s" if p99 else "no data"
-    if firing:
+    slo_breached = bool(p99) and float(p99[0]["value"][1]) > SLO_SECONDS
+    if firing or slo_breached:
         status, code = "UNHEALTHY", 1
     elif not p99:
         status, code = "UNKNOWN", 2  # nothing stored recently, or rules not loaded yet
     else:
         status, code = "HEALTHY", 0
-    print(f"{status:10} p99 ingest latency (5m) = {latency}, SLO = 2s")
+    print(f"{status:10} p99 ingest latency (5m) = {latency}, SLO = {SLO_SECONDS:g}s")
     return code
 
 
