@@ -71,11 +71,28 @@ finish() {
   if [ -z "$rows" ] || [ -z "$missing0" ]; then
     say "ERROR could not read the database, so this test is not judged"
     FAILED=1
-  elif [ "$rows" = "$distinct" ] && [ "$missing1" = "$missing0" ]; then
-    say "PASS  no duplicates, no new missing trades"
-  else
-    say "FAIL  duplicates=$(( rows - distinct )) new missing=$(( missing1 - missing0 ))"
+    return
+  fi
+  # A hole can be a trade that's only late: after a restart or a backlog some
+  # partitions are still behind. Lost means still missing after 10 minutes,
+  # the same rule as the dashboard's gaps panel.
+  local late=$(( missing1 - missing0 )) waited=0
+  while [ "$missing1" -gt "$missing0" ] && [ $waited -lt 600 ]; do
+    [ $waited -eq 0 ] && say "  $late trades not stored yet; checking again every 30 s for up to 10 minutes"
+    pause 30; waited=$(( waited + 30 ))
+    after=$(db); m=$(field "$after" missing); [ -n "$m" ] && missing1=$m
+  done
+  rows=$(field "$after" rows); distinct=$(field "$after" distinct)
+  if [ "$rows" != "$distinct" ]; then
+    say "FAIL  duplicates=$(( rows - distinct ))"
     FAILED=1
+  elif [ "$missing1" -gt "$missing0" ]; then
+    say "FAIL  $(( missing1 - missing0 )) trades still missing after 10 minutes"
+    FAILED=1
+  elif [ $waited -gt 0 ]; then
+    say "PASS  no duplicates; $late trades arrived late, all stored within $(( waited / 60 ))m $(( waited % 60 ))s"
+  else
+    say "PASS  no duplicates, no new missing trades"
   fi
 }
 
