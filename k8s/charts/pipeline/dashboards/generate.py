@@ -190,7 +190,7 @@ FROM trades
 WHERE trade_time > now() - interval '1 hour'
 GROUP BY symbol ORDER BY symbol""".strip(), 0, 12,
           desc="Straight from the table: what a user of the data sees. Quiet symbols can legitimately be seconds old.")
-sql_table("Gaps in trade ids, last 24h (missing trades)", """
+sql_table("Gaps in trade ids, last 24h (not stored yet / missing)", """
 WITH ordered AS (
   SELECT symbol, trade_id, trade_time,
          lag(trade_id)   OVER w AS prev_id,
@@ -202,10 +202,22 @@ WITH ordered AS (
 SELECT date_trunc('second', min(prev_time)) AS "gap from",
        date_trunc('second', max(trade_time)) AS "gap to",
        count(DISTINCT symbol)                AS symbols,
-       sum(trade_id - prev_id - 1)           AS "missing trades"
+       sum(trade_id - prev_id - 1)           AS trades,
+       -- A young hole is usually a backlog: one partition is behind, so later
+       -- ids are stored first. Still open after 10 minutes = really missing.
+       CASE WHEN max(trade_time) < now() - interval '10 minutes'
+            THEN 'missing' ELSE 'not stored yet' END AS status
 FROM ordered WHERE trade_id - prev_id > 1
 GROUP BY date_trunc('minute', prev_time) ORDER BY 1 DESC""".strip(), 12, 12,
-          desc="Binance trade ids are sequential per symbol, so a hole is a trade we never stored. Trades newer than 30s are excluded: across 12 partitions ids briefly land out of order. Empty = complete.")
+          desc="Binance trade ids are sequential per symbol, so a hole is a trade not in the table. "
+               "'not stored yet': under 10 minutes old. A symbol's trades are spread over 12 partitions, so when "
+               "consumers are behind (a backlog, a restart) later ids land first and the hole closes by itself. "
+               "'missing': still open after 10 minutes, a trade that was lost. Empty = complete.",
+          overrides=[{"matcher": {"id": "byName", "options": "status"}, "properties": [
+              {"id": "custom.cellOptions", "value": {"type": "color-text"}},
+              {"id": "mappings", "value": [{"type": "value", "options": {
+                  "missing": {"color": "red", "index": 0},
+                  "not stored yet": {"color": "orange", "index": 1}}}]}]}])
 y[0] += 8
 
 # ---------------------------------------------------------------- Kubernetes

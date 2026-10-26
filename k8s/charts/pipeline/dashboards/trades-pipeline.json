@@ -1307,9 +1307,9 @@
     },
     {
       "type": "table",
-      "title": "Gaps in trade ids, last 24h (missing trades)",
+      "title": "Gaps in trade ids, last 24h (not stored yet / missing)",
       "id": 24,
-      "description": "Binance trade ids are sequential per symbol, so a hole is a trade we never stored. Trades newer than 30s are excluded: across 12 partitions ids briefly land out of order. Empty = complete.",
+      "description": "Binance trade ids are sequential per symbol, so a hole is a trade not in the table. 'not stored yet': under 10 minutes old. A symbol's trades are spread over 12 partitions, so when consumers are behind (a backlog, a restart) later ids land first and the hole closes by itself. 'missing': still open after 10 minutes, a trade that was lost. Empty = complete.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "trades-db"
@@ -1330,12 +1330,45 @@
           "format": "table",
           "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "WITH ordered AS (\n  SELECT symbol, trade_id, trade_time,\n         lag(trade_id)   OVER w AS prev_id,\n         lag(trade_time) OVER w AS prev_time\n  FROM trades WHERE trade_time > now() - interval '24 hours'\n                 -- skip the live edge: ids land out of order across partitions for a moment\n                 AND trade_time < now() - interval '30 seconds'\n  WINDOW w AS (PARTITION BY symbol ORDER BY trade_id))\nSELECT date_trunc('second', min(prev_time)) AS \"gap from\",\n       date_trunc('second', max(trade_time)) AS \"gap to\",\n       count(DISTINCT symbol)                AS symbols,\n       sum(trade_id - prev_id - 1)           AS \"missing trades\"\nFROM ordered WHERE trade_id - prev_id > 1\nGROUP BY date_trunc('minute', prev_time) ORDER BY 1 DESC"
+          "rawSql": "WITH ordered AS (\n  SELECT symbol, trade_id, trade_time,\n         lag(trade_id)   OVER w AS prev_id,\n         lag(trade_time) OVER w AS prev_time\n  FROM trades WHERE trade_time > now() - interval '24 hours'\n                 -- skip the live edge: ids land out of order across partitions for a moment\n                 AND trade_time < now() - interval '30 seconds'\n  WINDOW w AS (PARTITION BY symbol ORDER BY trade_id))\nSELECT date_trunc('second', min(prev_time)) AS \"gap from\",\n       date_trunc('second', max(trade_time)) AS \"gap to\",\n       count(DISTINCT symbol)                AS symbols,\n       sum(trade_id - prev_id - 1)           AS trades,\n       -- A young hole is usually a backlog: one partition is behind, so later\n       -- ids are stored first. Still open after 10 minutes = really missing.\n       CASE WHEN max(trade_time) < now() - interval '10 minutes'\n            THEN 'missing' ELSE 'not stored yet' END AS status\nFROM ordered WHERE trade_id - prev_id > 1\nGROUP BY date_trunc('minute', prev_time) ORDER BY 1 DESC"
         }
       ],
       "fieldConfig": {
         "defaults": {},
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "missing": {
+                        "color": "red",
+                        "index": 0
+                      },
+                      "not stored yet": {
+                        "color": "orange",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "showHeader": true
