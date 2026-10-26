@@ -1,8 +1,10 @@
 {{- /*
-One Argo CD Application per component. Sync waves order them: an app starts
-only when every app in the waves before it is synced and healthy (Application
-health is enabled in argocd-cm, k8s/argocd.tf). make destroy removes them in
-the reverse order (scripts/argo-teardown.sh).
+One Argo CD Application per component. They are created together and each one
+retries until what it needs exists (CRDs, Kafka, secrets), so the order below
+emerges by itself and a broken app never blocks the others or a fix from Git.
+(Health-gated sync waves did block: the root app waited on a failed app and
+never applied the commit that fixed it.) make destroy uses the wave label to
+remove them in reverse order (scripts/argo-teardown.sh).
 
   0  cert-manager, KEDA, External Secrets   operators and their CRDs
   1  kafka-pki, external-secrets-config      internal CA, secrets from AWS
@@ -88,8 +90,6 @@ kind: Application
 metadata:
   name: {{ .name }}
   namespace: argocd
-  annotations:
-    argocd.argoproj.io/sync-wave: {{ .wave | quote }}
   labels:
     trades/wave: {{ .wave | quote }}
   # Deleting the Application deletes what it deployed.
@@ -110,8 +110,8 @@ spec:
     automated:
       prune: true
       selfHeal: true
-    retry: # CRDs and webhooks from earlier waves may need a moment
-      limit: 10
+    retry: # until the CRDs, webhooks and services it needs exist; never give up
+      limit: -1
       backoff: {duration: 15s, factor: 2, maxDuration: 3m}
     syncOptions:
       - RespectIgnoreDifferences=true
