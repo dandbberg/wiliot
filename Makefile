@@ -15,10 +15,10 @@ K8S   := terraform -chdir=k8s
 INFRA_VARS := -var-file=../envs/$(ENV)/infra.tfvars
 K8S_VARS   := -var-file=../envs/$(ENV)/k8s.tfvars
 
-# Computed once per make run (:=), so images and workloads use the same tag.
-# The ECR repo is immutable: every push needs a new tag.
+# The image tag is the last commit that changed app/: it names the code inside
+# the image, so commits to charts or docs keep using the image already in ECR.
 ifndef TAG
-TAG := $(shell git rev-parse --short HEAD 2>/dev/null || date -u +%Y%m%d%H%M%S)
+TAG := $(shell git log -1 --format=%h -- app)
 endif
 
 # kubectl for the EKS cluster, kept out of ~/.kube/config (git-ignored).
@@ -51,12 +51,12 @@ init-k8s:
 infra: init-infra
 	$(INFRA) apply -input=false $(INFRA_VARS)
 
-## The app image, built here with Docker (CodeBuild isn't available in this account).
+## The app image: skipped if ECR has it, else built here with Docker and pushed.
 images: init-infra
-	./scripts/build-push.sh $(TAG)
+	@./scripts/build-push.sh $(TAG)
 
 ## Argo CD and the root app (Terraform), then wait until Argo CD has deployed everything.
-workloads: init-k8s
+workloads: init-k8s images
 	$(K8S) apply -input=false $(K8S_VARS) -var image_tag=$(TAG)
 	@$(MAKE) -s kubeconfig
 	@./scripts/wait-argo.sh
@@ -68,7 +68,7 @@ access: init-infra
 
 kubeconfig: init-infra
 	@aws eks update-kubeconfig --name $$($(INFRA) output -raw cluster_name) --kubeconfig $(KUBECONFIG) >/dev/null
-	@echo "kubectl: export KUBECONFIG=$(KUBECONFIG)"
+	@echo "kubectl: export KUBECONFIG=$(KUBECONFIG)   (make health, make db and make urls set it themselves)"
 
 ## Teardown in reverse order: workloads first so nothing in-cluster holds AWS resources.
 destroy: init-k8s init-infra
@@ -88,9 +88,10 @@ urls: init-infra
 	@echo
 	@echo "  Certificate from the cluster's own CA: the browser warns once (Advanced -> Proceed)."
 	@echo "  Grafana needs no login to view. Logins:"
-	@echo "    Kafka UI, Prometheus, Alertmanager:  aws secretsmanager get-secret-value --secret-id $$($(INFRA) output -raw ui_admin_secret_name) --query SecretString --output text"
-	@echo "    Grafana admin:                       aws secretsmanager get-secret-value --secret-id $$($(INFRA) output -raw grafana_admin_secret_name) --query SecretString --output text"
-	@echo "    Argo CD (user admin):                kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"
+	@echo "  (run from this folder, with AWS_PROFILE set)"
+	@echo "    Kafka UI, Prometheus, Alertmanager:  aws secretsmanager get-secret-value --region $(AWS_REGION) --secret-id $$($(INFRA) output -raw ui_admin_secret_name) --query SecretString --output text"
+	@echo "    Grafana admin:                       aws secretsmanager get-secret-value --region $(AWS_REGION) --secret-id $$($(INFRA) output -raw grafana_admin_secret_name) --query SecretString --output text"
+	@echo "    Argo CD (user admin):                kubectl --kubeconfig eks.kubeconfig -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo"
 
 ## Fallback without the public gateway: the UIs on localhost via port-forward (Ctrl+C stops).
 ui: kubeconfig
