@@ -1,0 +1,134 @@
+{{- /*
+One Argo CD Application per component. Sync waves order them: an app starts
+only when every app in the waves before it is synced and healthy (Application
+health is enabled in argocd-cm, k8s/argocd.tf). make destroy removes them in
+the reverse order (scripts/argo-teardown.sh).
+
+  0  cert-manager, KEDA, External Secrets   operators and their CRDs
+  1  kafka-pki, external-secrets-config      internal CA, secrets from AWS
+  2  kafka, monitoring                       brokers, Prometheus, Grafana
+  3  pipeline                                producers, consumers, init jobs
+  4  postgres-exporter, ui-gateway           need the DB user / everything else
+*/ -}}
+{{- $a := .Values.aws -}}
+{{- $git := dict "repoURL" .Values.repoURL "targetRevision" .Values.revision -}}
+{{- $apps := list
+
+  (dict "name" "cert-manager" "wave" 0 "namespace" "cert-manager"
+    "source" (dict "repoURL" "https://charts.jetstack.io" "chart" "cert-manager" "targetRevision" "v1.21.3"
+      "helm" (dict "valuesObject" (dict
+        "crds" (dict "enabled" true)
+        "resources" (dict "requests" (dict "cpu" "10m" "memory" "64Mi") "limits" (dict "memory" "256Mi"))))))
+
+  (dict "name" "keda" "wave" 0 "namespace" "keda" "serverSide" true
+    "source" (dict "repoURL" "https://kedacore.github.io/charts" "chart" "keda" "targetRevision" "2.21.0"
+      "helm" (dict "valuesObject" (dict "resources" (dict
+        "operator" (dict "requests" (dict "cpu" "50m" "memory" "128Mi") "limits" (dict "memory" "512Mi"))
+        "metricServer" (dict "requests" (dict "cpu" "50m" "memory" "64Mi") "limits" (dict "memory" "256Mi"))
+        "webhooks" (dict "requests" (dict "cpu" "10m" "memory" "64Mi") "limits" (dict "memory" "256Mi")))))))
+
+  (dict "name" "external-secrets" "wave" 0 "namespace" "external-secrets"
+    "source" (dict "repoURL" "https://charts.external-secrets.io" "chart" "external-secrets" "targetRevision" "2.14.0"
+      "helm" (dict "valuesObject" (dict
+        "serviceAccount" (dict "name" "external-secrets"
+          "annotations" (dict "eks.amazonaws.com/role-arn" $a.externalSecretsRoleArn))
+        "resources" (dict "requests" (dict "cpu" "10m" "memory" "64Mi") "limits" (dict "memory" "256Mi"))))))
+
+  (dict "name" "kafka-pki" "wave" 1 "namespace" "cert-manager"
+    "source" (merge (dict "path" "k8s/charts/kafka-pki") $git))
+
+  (dict "name" "external-secrets-config" "wave" 1 "namespace" "monitoring"
+    "source" (merge (dict "path" "k8s/charts/external-secrets-config"
+      "helm" (dict "valuesObject" (dict "region" $a.region "namespace" "monitoring"
+        "grafanaAdminSecret" $a.grafanaAdminSecret "grafanaDbSecret" $a.grafanaDbSecret))) $git))
+
+  (dict "name" "kafka" "wave" 2 "namespace" "kafka"
+    "source" (merge (dict "path" "k8s/charts/kafka") $git))
+
+  (dict "name" "monitoring" "wave" 2 "namespace" "monitoring" "serverSide" true
+    "sources" (list
+      (dict "repoURL" "https://prometheus-community.github.io/helm-charts" "chart" "kube-prometheus-stack" "targetRevision" "92.11.0"
+        "helm" (dict "releaseName" "monitoring"
+          "valueFiles" (list "$values/k8s/values/kube-prometheus-stack.yaml")
+          "valuesObject" (dict "grafana" (dict "additionalDataSources" (list (dict
+            "name" "Trades DB" "uid" "trades-db" "type" "grafana-postgresql-datasource"
+            "url" (printf "%s:%v" $a.dbHost $a.dbPort) "user" "grafana"
+            "jsonData" (dict "database" $a.dbName "sslmode" "require" "postgresVersion" 1700)
+            "secureJsonData" (dict "password" "$TRADES_DB_PASSWORD")))))))
+      (merge (dict "ref" "values") $git)))
+
+  (dict "name" "pipeline" "wave" 3 "namespace" "trades"
+    "source" (merge (dict "path" "k8s/charts/pipeline"
+      "helm" (dict "valuesObject" (dict
+        "image" (dict "repository" $a.ecrRepository "tag" $a.imageTag "pullPolicy" "IfNotPresent")
+        "region" $a.region
+        "kafka" (dict "bootstrap" "kafka.kafka.svc.cluster.local:9092" "auth" "mtls" "replication" 3 "minInsyncReplicas" 2)
+        "db" (dict "host" $a.dbHost "port" $a.dbPort "name" $a.dbName "auth" "iam" "user" "consumer"
+          "adminSecretArn" $a.dbMasterSecretArn "readerSecretArn" $a.grafanaDbSecretArn)
+        "serviceAccounts" (dict "producer" "default" "consumer" "consumer" "dbAdmin" "db-init" "topicAdmin" "default")
+        "consumer" (dict "autoscaling" (dict "enabled" true))
+        "monitoring" (dict "enabled" true "dashboard" "trades-pipeline.json")))) $git))
+
+  (dict "name" "postgres-exporter" "wave" 4 "namespace" "monitoring"
+    "source" (dict "repoURL" "https://prometheus-community.github.io/helm-charts" "chart" "prometheus-postgres-exporter" "targetRevision" "8.2.0"
+      "helm" (dict "releaseName" "postgres-exporter" "valuesObject" (dict
+        "config" (dict "datasource" (dict "host" $a.dbHost "user" "grafana" "database" $a.dbName "sslmode" "require"
+          "passwordSecret" (dict "name" "grafana-trades-db" "key" "password")))
+        "serviceMonitor" (dict "enabled" true)
+        "resources" (dict "requests" (dict "cpu" "20m" "memory" "32Mi") "limits" (dict "memory" "128Mi"))))))
+
+  (dict "name" "ui-gateway" "wave" 4 "namespace" "monitoring"
+    "source" (merge (dict "path" "k8s/charts/ui-gateway"
+      "helm" (dict "valuesObject" (dict "allowedCidrs" $a.uiAllowedCidrs "adminSecret" $a.uiAdminSecret))) $git))
+-}}
+{{- range $apps }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .name }}
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .wave | quote }}
+  labels:
+    trades/wave: {{ .wave | quote }}
+  # Deleting the Application deletes what it deployed.
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .namespace }}
+  {{- if .sources }}
+  sources:
+    {{- toYaml .sources | nindent 4 }}
+  {{- else }}
+  source:
+    {{- toYaml .source | nindent 4 }}
+  {{- end }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry: # CRDs and webhooks from earlier waves may need a moment
+      limit: 10
+      backoff: {duration: 15s, factor: 2, maxDuration: 3m}
+    syncOptions:
+      - RespectIgnoreDifferences=true
+      {{- if .serverSide }}
+      - ServerSideApply=true # CRDs too large for client-side apply
+      {{- end }}
+  ignoreDifferences:
+    # KEDA owns the consumers' replica count.
+    - group: apps
+      kind: Deployment
+      name: consumer
+      jsonPointers: [/spec/replicas]
+    # Webhook CA bundles are injected at runtime by the operators.
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jqPathExpressions: [".webhooks[]?.clientConfig.caBundle"]
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jqPathExpressions: [".webhooks[]?.clientConfig.caBundle"]
+{{- end }}

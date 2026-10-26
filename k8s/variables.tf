@@ -12,6 +12,17 @@ variable "ui_allowed_cidrs" {
   }
 }
 
+variable "git_repo_url" {
+  description = "The repository Argo CD deploys from (public, read without credentials)."
+  type        = string
+}
+
+variable "git_revision" {
+  description = "Branch or tag Argo CD follows."
+  type        = string
+  default     = "main"
+}
+
 variable "image_tag" {
   description = "Tag of the app image in ECR, pushed by scripts/build-push.sh (git SHA)."
   type        = string

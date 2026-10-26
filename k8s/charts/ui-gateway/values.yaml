@@ -4,8 +4,8 @@ replicas: 2
 # Who may reach the load balancer at all (required, never empty).
 allowedCidrs: []
 
-# Secrets Manager secret with {username, password}: the login for every UI
-# except Grafana, which has its own (anonymous viewers, admin login).
+# Secrets Manager secret with {username, password}: the login for Kafka UI,
+# Prometheus and Alertmanager. Grafana and Argo CD have their own.
 adminSecret: ""
 
 # Public port -> in-cluster service. "login: true" puts the gateway's login in front.
@@ -26,3 +26,7 @@ uis:
     port: 9093
     upstream: monitoring-kube-prometheus-alertmanager.monitoring.svc.cluster.local:9093
     login: true
+  - name: argocd # its own login (admin)
+    port: 8443
+    upstream: argocd-server.argocd.svc.cluster.local:80
+    login: false

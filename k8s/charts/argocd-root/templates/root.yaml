@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  source:
+    repoURL: {{ required "repoURL" .Values.repoURL }}
+    targetRevision: {{ .Values.revision }}
+    path: k8s/charts/apps
+    helm:
+      valuesObject:
+        repoURL: {{ .Values.repoURL }}
+        revision: {{ .Values.revision }}
+        aws:
+          {{- toYaml .Values.aws | nindent 10 }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

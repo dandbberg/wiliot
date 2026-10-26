@@ -1,15 +1,15 @@
-# Workloads on EKS, applied after infra/. Destroy runs in reverse: the pipeline,
-# then Kafka (its StatefulSet deletes its EBS-backed PVC), then monitoring.
+# What the cluster needs before Argo CD can deploy the apps, and what carries
+# AWS-specific values: namespaces, the IRSA service accounts and the storage
+# class. Everything else is deployed by Argo CD (argocd.tf, charts/apps).
 
 resource "kubernetes_namespace_v1" "this" {
-  for_each = toset(["trades", "kafka", "monitoring"])
+  for_each = toset(["trades", "kafka", "monitoring", "cert-manager", "keda", "external-secrets"])
   metadata {
     name = each.key
   }
 }
 
-# EBS gp3 for Kafka. WaitForFirstConsumer creates the volume in the AZ of the
-# node the pod lands on; Delete removes it when the PVC goes.
+# gp3, encrypted. Kafka's and Prometheus's volumes; deleted with their claims.
 resource "kubernetes_storage_class_v1" "gp3" {
   metadata {
     name = "gp3"
@@ -24,8 +24,8 @@ resource "kubernetes_storage_class_v1" "gp3" {
   }
 }
 
-# ServiceAccounts for the two workloads that need AWS: IRSA maps each to its own
-# IAM role (created in infra/, trusting exactly this namespace/name).
+# IRSA: the consumer connects to RDS with its IAM role (no password); db-init
+# reads the master secret once to create the DB users.
 resource "kubernetes_service_account_v1" "irsa" {
   for_each = toset(["consumer", "db-init"])
   metadata {
@@ -35,15 +35,4 @@ resource "kubernetes_service_account_v1" "irsa" {
       "eks.amazonaws.com/role-arn" = local.infra.irsa_role_arns[each.key]
     }
   }
-}
-
-resource "helm_release" "kafka" {
-  name      = "kafka"
-  chart     = "${path.module}/charts/kafka"
-  namespace = kubernetes_namespace_v1.this["kafka"].metadata[0].name
-  wait      = true
-  timeout   = 600
-
-  # Certificates come from the kafka-ca issuer; client certs go into "trades".
-  depends_on = [kubernetes_storage_class_v1.gp3, helm_release.kafka_pki, kubernetes_namespace_v1.this["trades"]]
 }

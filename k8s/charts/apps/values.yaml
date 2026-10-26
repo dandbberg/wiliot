@@ -1,0 +1,20 @@
+# Where Argo reads this repository (set by the root Application, k8s/argocd.tf).
+repoURL: ""
+revision: main
+
+# Everything AWS-specific comes from Terraform through the root Application;
+# nothing here is environment-specific.
+aws:
+  region: ""
+  ecrRepository: ""
+  imageTag: ""
+  dbHost: ""
+  dbPort: 5432
+  dbName: ""
+  dbMasterSecretArn: ""
+  grafanaDbSecretArn: ""
+  grafanaAdminSecret: ""
+  grafanaDbSecret: ""
+  uiAdminSecret: ""
+  externalSecretsRoleArn: ""
+  uiAllowedCidrs: []

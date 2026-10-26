@@ -1,0 +1,5 @@
+apiVersion: v2
+name: argocd-root
+description: The root Application. Points Argo CD at k8s/charts/apps in Git, with the AWS values Terraform knows.
+type: application
+version: 0.1.0

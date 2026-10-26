@@ -48,6 +48,10 @@ kafka() {
 }
 group() { kafka kafka-consumer-groups.sh --group trades-consumer "$@"; }
 lag()   { group --describe | awk '$2=="trades" && $6 ~ /^[0-9]+$/ {s+=$6} END {print s+0}'; }
+# Argo CD would undo a manual change within minutes (self-heal). The root app
+# owns the pipeline app, so both are paused.
+argo_pause()  { for a in root pipeline; do kubectl -n argocd patch application $a --type merge -p '{"spec":{"syncPolicy":{"automated":null}}}' >/dev/null; done; }
+argo_resume() { for a in pipeline root; do kubectl -n argocd patch application $a --type merge -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}' >/dev/null; done; }
 consumers() { kubectl -n trades get deploy consumer -o jsonpath='{.status.readyReplicas}/{.spec.replicas}'; }
 
 # Before/after bookkeeping shared by every test.
@@ -138,7 +142,7 @@ t_replay() {
 
 t_keda() {
   begin "KEDA scale-out on Kafka lag"
-  local batch; batch=$(kubectl -n trades get deploy consumer -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="BATCH_SIZE")].value}')
+  say "(Argo CD auto-sync paused for the test)"; argo_pause
   run kubectl -n trades annotate scaledobject consumer autoscaling.keda.sh/paused-replicas=0 --overwrite
   kubectl -n trades wait --for=delete pod -l app.kubernetes.io/name=consumer --timeout=180s >/dev/null 2>&1
   # One insert and one offset commit per message, so the backlog lasts long enough to watch.
@@ -161,8 +165,8 @@ t_keda() {
     local r; r=$(consumers); say "  $(ts) consumers=$r"
     [ "$r" = "3/3" ] && break; pause 20
   done
-  run kubectl -n trades set env deploy/consumer BATCH_SIZE="$batch"
-  kubectl -n trades rollout status deploy/consumer --timeout=300s >/dev/null
+  say "(Argo CD auto-sync back on: it restores BATCH_SIZE)"; argo_resume
+  sleep 20; kubectl -n trades rollout status deploy/consumer --timeout=300s >/dev/null
   finish
 }
 
